@@ -59,17 +59,23 @@ func main() {
 	// Subcommand: herd install
 	// Writes herd hooks into ~/.claude/settings.json.
 	if len(os.Args) == 2 && os.Args[1] == "install" {
-		cwd, err := os.Getwd()
+		self, err := os.Executable()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
+			fmt.Fprintln(os.Stderr, "error finding executable path:", err)
 			os.Exit(1)
 		}
-		self := filepath.Join(cwd, "herd")
+		// Resolve any symlinks to get the real path
+		self, err = filepath.EvalSymlinks(self)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error resolving executable path:", err)
+			os.Exit(1)
+		}
 		if err := hook.Install(self); err != nil {
 			fmt.Fprintln(os.Stderr, "error installing hooks:", err)
 			os.Exit(1)
 		}
-		fmt.Println("hooks installed → ~/.claude/settings.json")
+		fmt.Printf("hooks installed → ~/.claude/settings.json\n")
+		fmt.Printf("using herd at: %s\n", self)
 		return
 	}
 
