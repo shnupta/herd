@@ -147,8 +147,12 @@ func ResizePaneAuto(paneID string) error {
 // SwitchToPane focuses the tmux client on the given pane, restoring its natural
 // size first so it fills the terminal properly.
 func SwitchToPane(paneID string) error {
-	// Restore natural sizing before the client switches to the window.
-	_ = ResizePaneAuto(paneID)
+	// Get current client width and resize the target window to match.
+	// This ensures the window fills the terminal properly even if it was
+	// previously resized to a smaller width.
+	if clientWidth, err := ClientWidth(); err == nil && clientWidth > 0 {
+		_ = ResizePane(paneID, clientWidth)
+	}
 
 	// select-window makes the window containing the pane active in its session.
 	if err := exec.Command("tmux", "select-window", "-t", paneID).Run(); err != nil {
@@ -204,6 +208,19 @@ func CurrentSession() (string, error) {
 // PaneWidth returns the current width of a pane.
 func PaneWidth(paneID string) (int, error) {
 	out, err := exec.Command("tmux", "display-message", "-t", paneID, "-p", "#{pane_width}").Output()
+	if err != nil {
+		return 0, err
+	}
+	w, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, err
+	}
+	return w, nil
+}
+
+// ClientWidth returns the width of the current tmux client.
+func ClientWidth() (int, error) {
+	out, err := exec.Command("tmux", "display-message", "-p", "#{client_width}").Output()
 	if err != nil {
 		return 0, err
 	}
