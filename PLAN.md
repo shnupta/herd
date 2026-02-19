@@ -74,6 +74,23 @@ Discovery order:
 3. Append any panes matched by process-name heuristic that aren't already in step 1
    (hooks-not-installed fallback).
 
+### tmux integration — jump back to herd
+When you press `t` to jump to a Claude pane you lose the ability to get back to herd
+without knowing which window it lives in. Two parts:
+
+1. **Herd registers itself on startup.** Write the herd pane ID to a well-known location
+   (e.g. `~/.herd/herd_pane`) so external scripts and tmux bindings can find it.
+
+2. **A tmux key binding to return.** `herd install` (or a separate `herd tmux-setup`)
+   writes a binding into `~/.tmux.conf` (or sources a snippet) such as:
+   ```
+   bind-key H run-shell "tmux switch-client -t $(cat ~/.herd/herd_pane)"
+   ```
+   so `prefix+H` always snaps back to herd from anywhere in tmux.
+
+3. **Herd cleans up on exit.** Remove `~/.herd/herd_pane` on shutdown so stale pane
+   IDs don't cause errors after herd exits.
+
 ## Backlog
 
 - Broadcast mode — send the same prompt / keystroke to multiple selected sessions simultaneously
