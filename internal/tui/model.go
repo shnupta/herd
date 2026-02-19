@@ -14,6 +14,7 @@ import (
 // msg types used by the BubbleTea event loop.
 
 type tickMsg time.Time
+type sessionRefreshMsg time.Time
 
 type sessionsDiscoveredMsg []session.Session
 
@@ -51,7 +52,10 @@ type Model struct {
 	ready    bool
 }
 
-const pollInterval = 100 * time.Millisecond
+const (
+	pollInterval         = 100 * time.Millisecond
+	sessionRefreshInterval = 3 * time.Second
+)
 
 // New returns an initialised Model.
 func New(w *state.Watcher) Model {
@@ -69,6 +73,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		discoverSessions(),
 		tickCapture(),
+		tickSessionRefresh(),
 		waitForStateEvent(m.stateWatcher),
 		m.spinner.Tick,
 	)
@@ -89,6 +94,13 @@ func discoverSessions() tea.Cmd {
 func tickCapture() tea.Cmd {
 	return tea.Tick(pollInterval, func(t time.Time) tea.Msg {
 		return tickMsg(t)
+	})
+}
+
+// tickSessionRefresh returns a command that fires after sessionRefreshInterval.
+func tickSessionRefresh() tea.Cmd {
+	return tea.Tick(sessionRefreshInterval, func(t time.Time) tea.Msg {
+		return sessionRefreshMsg(t)
 	})
 }
 

@@ -53,6 +53,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, m.resizePaneCmd())
 
+	// ── Session list auto-refresh ──────────────────────────────────────────
+	case sessionRefreshMsg:
+		cmds = append(cmds, discoverSessions(), tickSessionRefresh())
+
 	// ── Capture-pane poll ──────────────────────────────────────────────────
 	case tickMsg:
 		cmds = append(cmds, tickCapture())

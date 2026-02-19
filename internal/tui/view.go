@@ -71,14 +71,16 @@ func (m Model) renderOutputHeader() string {
 	icon := stateIcon(sel.State.String())
 	label := stateLabel(sel.State.String(), sel.CurrentTool)
 
-	scrollPct := ""
+	// Pane ID anchored to the left section so it never shifts.
+	// Scroll % floats to the far right and only appears when not at bottom.
+	subtext := lipgloss.NewStyle().Foreground(colSubtext)
+	left := icon + " " + label + "  " + subtext.Render(sel.TmuxPane)
+
+	right := ""
 	if !m.viewport.AtBottom() {
 		pct := int(m.viewport.ScrollPercent() * 100)
-		scrollPct = fmt.Sprintf("  %d%%", pct)
+		right = subtext.Render(fmt.Sprintf("%d%%", pct))
 	}
-
-	right := lipgloss.NewStyle().Foreground(colSubtext).Render(sel.TmuxPane + scrollPct)
-	left := icon + " " + label
 
 	gap := m.width - sessionPaneWidth - 1 - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
