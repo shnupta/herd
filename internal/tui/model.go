@@ -45,6 +45,10 @@ type Model struct {
 	// Input
 	insertMode bool // true when keystrokes are forwarded to the selected pane
 
+	// Diff review mode
+	reviewMode  bool         // true when in diff review mode
+	reviewModel *ReviewModel // the review sub-model
+
 	// State
 	spinner  spinner.Model
 	stateWatcher *state.Watcher
