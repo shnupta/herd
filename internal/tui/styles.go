@@ -45,8 +45,7 @@ var (
 				Foreground(colSubtext).
 				BorderStyle(lipgloss.NormalBorder()).
 				BorderBottom(true).
-				BorderForeground(colBorder).
-				PaddingLeft(1)
+				BorderForeground(colBorder)
 
 	styleStatusBar = lipgloss.NewStyle().
 			Foreground(colSubtext).

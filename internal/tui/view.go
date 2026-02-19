@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shnupta/herd/internal/session"
@@ -74,7 +75,7 @@ func (m Model) renderOutputHeader() string {
 	// Pane ID anchored to the left section so it never shifts.
 	// Scroll % floats to the far right and only appears when not at bottom.
 	subtext := lipgloss.NewStyle().Foreground(colSubtext)
-	left := icon + " " + label + "  " + subtext.Render(sel.TmuxPane)
+	left := " " + icon + " " + label + "  " + subtext.Render(sel.TmuxPane)
 
 	right := ""
 	if !m.viewport.AtBottom() {
@@ -82,11 +83,14 @@ func (m Model) renderOutputHeader() string {
 		right = subtext.Render(fmt.Sprintf("%d%%", pct))
 	}
 
-	gap := m.width - sessionPaneWidth - 1 - lipgloss.Width(left) - lipgloss.Width(right)
+	available := m.width - sessionPaneWidth - 1
+	gap := available - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
-	return left + strings.Repeat(" ", gap) + right
+	// Hard-truncate so wide emoji / miscounted ANSI never overflow the row.
+	result := left + strings.Repeat(" ", gap) + right
+	return ansi.Truncate(result, available, "")
 }
 
 func (m Model) renderSessionList() string {

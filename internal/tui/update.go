@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/shnupta/herd/internal/hook"
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/state"
@@ -51,7 +52,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if states, err := state.ReadAll(); err == nil {
 			m = m.applyStates(states)
 		}
-		cmds = append(cmds, m.resizePaneCmd())
 
 	// ── Session list auto-refresh ──────────────────────────────────────────
 	case sessionRefreshMsg:
@@ -68,7 +68,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sel := m.selectedSession(); sel != nil && sel.TmuxPane == msg.paneID && msg.content != m.lastCapture {
 			m.lastCapture = msg.content
 			m.atBottom = m.viewport.AtBottom()
-			m.viewport.SetContent(cleanCapture(msg.content))
+			m.viewport.SetContent(truncateLines(cleanCapture(msg.content), m.viewport.Width))
 			if m.atBottom {
 				m.viewport.GotoBottom()
 			}
@@ -378,6 +378,19 @@ func (m Model) sessionIndexAtY(y int) int {
 		return -1
 	}
 	return contentY / 2
+}
+
+// truncateLines clips any line wider than maxWidth to prevent frame overflow.
+// Uses ANSI-aware truncation so escape codes don't corrupt the layout.
+func truncateLines(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, maxWidth, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func cleanCapture(s string) string {

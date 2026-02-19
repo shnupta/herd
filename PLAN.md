@@ -3,7 +3,7 @@
 ## Done
 
 - [x] TUI with session list pane and live `capture-pane` viewport
-- [x] Session discovery via `tmux list-panes`, detecting Claude processes
+- [x] Session discovery via `tmux list-panes`, detecting Claude processes by process name
 - [x] Status indicators: working / waiting / plan_ready / notifying / idle
 - [x] Hook installation into `~/.claude/settings.json`
 - [x] Hook handler updating per-session state files
@@ -53,6 +53,26 @@ Show a compact summary in the top bar, e.g.:
 ### Zoom mode (`z`)
 Hide the session sidebar entirely so the viewport fills the terminal.
 Toggle back with `z`.
+
+### Improve session discovery
+Current approach scans `pane_current_command` for `"claude"` or a semver string (e.g.
+`2.1.47`). This is fragile:
+- Renaming a tmux window/pane does not affect `pane_current_command`, but if Claude
+  ships under a different binary name it silently breaks.
+- Any unrelated process named like a version string is a false positive.
+
+Better approach: use the hook state files as the **primary** discovery source.
+When hooks are installed, every Claude session writes `~/.herd/state/<session_id>.json`
+containing its pane ID, project path, and session ID — ground truth with no process-name
+guessing. The `tmux list-panes` scan stays as a **fallback** for sessions that started
+before hooks were installed or where hooks are absent.
+
+Discovery order:
+1. Read all state files from `~/.herd/state/` → produces sessions with full metadata.
+2. Cross-reference against live tmux panes (fast `list-panes`) to drop stale entries
+   whose pane no longer exists.
+3. Append any panes matched by process-name heuristic that aren't already in step 1
+   (hooks-not-installed fallback).
 
 ## Backlog
 
