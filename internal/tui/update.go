@@ -199,10 +199,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 							reviewModel := NewReviewModel(parsed, sessionID, gitRoot)
 							// Send initial size
-							reviewModel, _ = reviewModel.Update(tea.WindowSizeMsg{
+							updatedModel, _ := reviewModel.Update(tea.WindowSizeMsg{
 								Width:  m.width,
 								Height: m.height,
-							}).(ReviewModel)
+							})
+							reviewModel = updatedModel.(ReviewModel)
 							m.reviewModel = &reviewModel
 							m.reviewMode = true
 						}

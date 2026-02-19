@@ -515,7 +515,7 @@ func (m ReviewModel) View() string {
 	header := reviewHeaderStyle.Width(m.width).Render(
 		fmt.Sprintf("Review: %s  (%d/%d files, %d comments)",
 			currentFile,
-			m.fileIndex()+1,
+			m.currentFileIndex()+1,
 			m.diff.TotalFiles(),
 			len(m.review.Comments),
 		),
@@ -548,7 +548,7 @@ func (m ReviewModel) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, content, help)
 }
 
-func (m ReviewModel) fileIndex() int {
+func (m ReviewModel) currentFileIndex() int {
 	if len(m.flatLines) > 0 && m.flatIndex < len(m.flatLines) {
 		return m.flatLines[m.flatIndex].fileIndex
 	}
