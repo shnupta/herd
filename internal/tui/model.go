@@ -60,6 +60,9 @@ type Model struct {
 	pickerMode  bool         // true when in project picker mode
 	pickerModel *PickerModel // the picker sub-model
 
+	// Pending selection after new session creation
+	pendingSelectPane string // pane ID to select after next session discovery
+
 	// State
 	spinner  spinner.Model
 	stateWatcher *state.Watcher

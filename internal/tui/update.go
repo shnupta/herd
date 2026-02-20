@@ -57,8 +57,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pickerModel = &pickerModel
 
 		if pickerModel.ChosenPath() != "" {
-			// Launch new session
-			_ = LaunchSession(pickerModel.ChosenPath())
+			// Launch new session and remember the pane ID for selection
+			if paneID, err := LaunchSession(pickerModel.ChosenPath()); err == nil {
+				m.pendingSelectPane = paneID
+			}
 			m.pickerMode = false
 			m.pickerModel = nil
 			// Refresh session list to pick up the new session
@@ -136,6 +138,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = merged
 		if m.selected >= len(m.sessions) {
 			m.selected = maxInt(0, len(m.sessions)-1)
+		}
+		// If we have a pending pane selection, find and select it
+		if m.pendingSelectPane != "" {
+			for i, s := range m.sessions {
+				if s.TmuxPane == m.pendingSelectPane {
+					m.selected = i
+					m.lastCapture = "" // Force viewport refresh
+					break
+				}
+			}
+			m.pendingSelectPane = ""
 		}
 		if states, err := state.ReadAll(); err == nil {
 			m = m.applyStates(states)
