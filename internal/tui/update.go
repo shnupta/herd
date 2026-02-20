@@ -210,8 +210,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case captureMsg:
 		if sel := m.selectedSession(); sel != nil && sel.TmuxPane == msg.paneID && msg.content != m.lastCapture {
 			m.lastCapture = msg.content
+			m.cursorX = msg.cursorX
+			m.cursorY = msg.cursorY
 			m.atBottom = m.viewport.AtBottom()
-			m.viewport.SetContent(truncateLines(cleanCapture(msg.content), m.viewport.Width))
+			
+			// Render cursor into content if viewport is at bottom (showing live output)
+			content := cleanCapture(msg.content)
+			if m.atBottom && msg.paneHeight > 0 {
+				content = renderCursor(content, msg.cursorX, msg.cursorY, msg.paneHeight)
+			}
+			
+			m.viewport.SetContent(truncateLines(content, m.viewport.Width))
 			if m.atBottom {
 				m.viewport.GotoBottom()
 			}
@@ -532,7 +541,15 @@ func fetchCapture(paneID string) tea.Cmd {
 		if err != nil {
 			return nil
 		}
-		return captureMsg{paneID: paneID, content: content}
+		cursorX, cursorY, _ := tmux.CursorPosition(paneID)
+		paneHeight, _ := tmux.PaneHeight(paneID)
+		return captureMsg{
+			paneID:     paneID,
+			content:    content,
+			cursorX:    cursorX,
+			cursorY:    cursorY,
+			paneHeight: paneHeight,
+		}
 	}
 }
 
@@ -699,4 +716,87 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// renderCursor inserts a cursor indicator at the specified position in the content.
+// cursorX is the column, cursorY is the row (0-indexed from the end of content,
+// since we show the bottom of the capture which corresponds to the visible pane).
+// Returns the modified content.
+func renderCursor(content string, cursorX, cursorY, paneHeight int) string {
+	lines := strings.Split(content, "\n")
+	
+	// Calculate which line in the capture corresponds to cursorY
+	// cursorY is 0-indexed from top of visible pane
+	// The last paneHeight lines of capture are the visible area
+	visibleStart := len(lines) - paneHeight
+	if visibleStart < 0 {
+		visibleStart = 0
+	}
+	targetLine := visibleStart + cursorY
+	
+	if targetLine < 0 || targetLine >= len(lines) {
+		return content
+	}
+	
+	line := lines[targetLine]
+	
+	// Calculate visual position accounting for ANSI escape codes
+	visualPos := 0
+	bytePos := 0
+	inEscape := false
+	
+	for i, r := range line {
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			bytePos = i + 1
+			continue
+		}
+		if r == '\x1b' {
+			inEscape = true
+			bytePos = i + 1
+			continue
+		}
+		if visualPos == cursorX {
+			bytePos = i
+			break
+		}
+		visualPos++
+		bytePos = i + len(string(r))
+	}
+	
+	// Insert cursor indicator (inverse video block)
+	// Using ANSI: \x1b[7m for inverse, \x1b[27m to reset inverse
+	cursorChar := " "
+	if bytePos < len(line) {
+		// Get the character at cursor position
+		rest := line[bytePos:]
+		for _, r := range rest {
+			if r != '\x1b' {
+				cursorChar = string(r)
+				break
+			}
+		}
+	}
+	
+	cursor := "\x1b[7m" + cursorChar + "\x1b[27m"
+	
+	if bytePos >= len(line) {
+		// Cursor is at end of line
+		lines[targetLine] = line + cursor
+	} else {
+		// Insert cursor, skipping the character it replaces
+		nextCharLen := len(cursorChar)
+		if nextCharLen == 0 {
+			nextCharLen = 1
+		}
+		endPos := bytePos + nextCharLen
+		if endPos > len(line) {
+			endPos = len(line)
+		}
+		lines[targetLine] = line[:bytePos] + cursor + line[endPos:]
+	}
+	
+	return strings.Join(lines, "\n")
 }

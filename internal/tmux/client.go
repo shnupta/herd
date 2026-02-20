@@ -100,6 +100,30 @@ func CapturePane(paneID string, scrollbackLines int) (string, error) {
 	return string(out), nil
 }
 
+// CursorPosition returns the cursor X and Y position in a pane.
+// X is the column (0-indexed), Y is the row (0-indexed from top of visible area).
+func CursorPosition(paneID string) (x, y int, err error) {
+	out, err := exec.Command(
+		"tmux", "display", "-t", paneID, "-p", "#{cursor_x} #{cursor_y}",
+	).Output()
+	if err != nil {
+		return 0, 0, fmt.Errorf("tmux display cursor: %w", err)
+	}
+	parts := strings.Fields(strings.TrimSpace(string(out)))
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected cursor output: %s", out)
+	}
+	x, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, err
+	}
+	y, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, err
+	}
+	return x, y, nil
+}
+
 // SendLiteral sends text as literal characters to a pane, without interpreting
 // the text as tmux key names.
 func SendLiteral(paneID, text string) error {
@@ -228,6 +252,19 @@ func PaneWidth(paneID string) (int, error) {
 		return 0, err
 	}
 	return w, nil
+}
+
+// PaneHeight returns the current height of a pane.
+func PaneHeight(paneID string) (int, error) {
+	out, err := exec.Command("tmux", "display-message", "-t", paneID, "-p", "#{pane_height}").Output()
+	if err != nil {
+		return 0, err
+	}
+	h, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, err
+	}
+	return h, nil
 }
 
 // ClientWidth returns the width of the current tmux client.
