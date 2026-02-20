@@ -143,6 +143,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			merged = append(merged, s)
 		}
 		m.sessions = merged
+		// Sort sessions with pinned at top
+		m.sortSessions()
 		if m.selected >= len(m.sessions) {
 			m.selected = maxInt(0, len(m.sessions)-1)
 		}
@@ -313,6 +315,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Enter filter mode
 			m.filterMode = true
 			m.filterInput.Focus()
+
+		case key.Matches(msg, keys.Pin):
+			// Toggle pin on selected session
+			if sel := m.selectedSession(); sel != nil {
+				if _, isPinned := m.pinned[sel.TmuxPane]; isPinned {
+					delete(m.pinned, sel.TmuxPane)
+				} else {
+					m.pinCounter++
+					m.pinned[sel.TmuxPane] = m.pinCounter
+				}
+				m.sortSessions()
+			}
+
+		case key.Matches(msg, keys.MoveUp):
+			// Move selected session up in the list
+			if m.selected > 0 {
+				m.sessions[m.selected], m.sessions[m.selected-1] = m.sessions[m.selected-1], m.sessions[m.selected]
+				// If swapping pinned sessions, swap their pin order too
+				pane1, pane2 := m.sessions[m.selected].TmuxPane, m.sessions[m.selected-1].TmuxPane
+				if order1, ok1 := m.pinned[pane1]; ok1 {
+					if order2, ok2 := m.pinned[pane2]; ok2 {
+						m.pinned[pane1], m.pinned[pane2] = order2, order1
+					}
+				}
+				m.selected--
+				m.lastCapture = ""
+			}
+
+		case key.Matches(msg, keys.MoveDown):
+			// Move selected session down in the list
+			if m.selected < len(m.sessions)-1 {
+				m.sessions[m.selected], m.sessions[m.selected+1] = m.sessions[m.selected+1], m.sessions[m.selected]
+				// If swapping pinned sessions, swap their pin order too
+				pane1, pane2 := m.sessions[m.selected].TmuxPane, m.sessions[m.selected+1].TmuxPane
+				if order1, ok1 := m.pinned[pane1]; ok1 {
+					if order2, ok2 := m.pinned[pane2]; ok2 {
+						m.pinned[pane1], m.pinned[pane2] = order2, order1
+					}
+				}
+				m.selected++
+				m.lastCapture = ""
+			}
 		}
 
 	// ── Mouse ──────────────────────────────────────────────────────────────

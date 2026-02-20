@@ -196,6 +196,12 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 		name = s.TmuxPane
 	}
 
+	// Add pin indicator
+	pinIndicator := ""
+	if _, isPinned := m.pinned[s.TmuxPane]; isPinned {
+		pinIndicator = "📌 "
+	}
+
 	nameStyle := styleSessionItem
 	if i == m.selected {
 		nameStyle = styleSessionItemSelected
@@ -203,7 +209,7 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 
 	nameLine := nameStyle.
 		Width(sessionPaneWidth - 1).
-		Render(icon + " " + name)
+		Render(pinIndicator + icon + " " + name)
 
 	// Sub-line: tool name or idle duration
 	meta := sessionMeta(s)
@@ -249,14 +255,15 @@ func (m Model) renderHelp() string {
 		return styleHelpInsert.Width(m.width).Render("FILTER  [enter] apply  [esc] clear")
 	}
 	parts := []string{
-		"[j/k] navigate",
+		"[j/k] nav",
+		"[J/K] move",
+		"[p] pin",
 		"[/] filter",
 		"[i] insert",
 		"[t] jump",
-		"[d] diff review",
-		"[x] kill",
+		"[d] diff",
 		"[n] new",
-		"[r] refresh",
+		"[x] kill",
 	}
 	return styleHelp.Width(m.width).Render(strings.Join(parts, "  "))
 }

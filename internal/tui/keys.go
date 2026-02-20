@@ -15,6 +15,9 @@ type keyMap struct {
 	Install  key.Binding
 	Review   key.Binding
 	Filter   key.Binding
+	Pin      key.Binding
+	MoveUp   key.Binding
+	MoveDown key.Binding
 }
 
 var keys = keyMap{
@@ -61,6 +64,18 @@ var keys = keyMap{
 	Filter: key.NewBinding(
 		key.WithKeys("/"),
 		key.WithHelp("/", "filter"),
+	),
+	Pin: key.NewBinding(
+		key.WithKeys("p"),
+		key.WithHelp("p", "pin/unpin"),
+	),
+	MoveUp: key.NewBinding(
+		key.WithKeys("K", "shift+up"),
+		key.WithHelp("K", "move up"),
+	),
+	MoveDown: key.NewBinding(
+		key.WithKeys("J", "shift+down"),
+		key.WithHelp("J", "move down"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),

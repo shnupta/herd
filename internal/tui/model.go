@@ -63,6 +63,10 @@ type Model struct {
 	// Pending selection after new session creation
 	pendingSelectPane string // pane ID to select after next session discovery
 
+	// Pinning and ordering
+	pinned     map[string]int // paneID -> pin order (lower = pinned earlier)
+	pinCounter int            // increments on each pin to assign order
+
 	// State
 	spinner  spinner.Model
 	stateWatcher *state.Watcher
@@ -89,6 +93,7 @@ func New(w *state.Watcher) Model {
 		stateWatcher: w,
 		atBottom:     true,
 		filterInput:  fi,
+		pinned:       make(map[string]int),
 	}
 }
 
@@ -147,4 +152,50 @@ func (m *Model) selectedSession() *session.Session {
 		return nil
 	}
 	return &m.sessions[m.selected]
+}
+
+// sortSessions sorts sessions with pinned sessions at the top (by pin order),
+// preserving the relative order of unpinned sessions.
+func (m *Model) sortSessions() {
+	if len(m.sessions) <= 1 {
+		return
+	}
+
+	// Remember currently selected pane to restore selection after sort
+	var selectedPane string
+	if m.selected < len(m.sessions) {
+		selectedPane = m.sessions[m.selected].TmuxPane
+	}
+
+	// Separate pinned and unpinned sessions
+	var pinned, unpinned []session.Session
+	for _, s := range m.sessions {
+		if _, ok := m.pinned[s.TmuxPane]; ok {
+			pinned = append(pinned, s)
+		} else {
+			unpinned = append(unpinned, s)
+		}
+	}
+
+	// Sort pinned sessions by their pin order
+	for i := 0; i < len(pinned)-1; i++ {
+		for j := i + 1; j < len(pinned); j++ {
+			if m.pinned[pinned[i].TmuxPane] > m.pinned[pinned[j].TmuxPane] {
+				pinned[i], pinned[j] = pinned[j], pinned[i]
+			}
+		}
+	}
+
+	// Combine: pinned first, then unpinned
+	m.sessions = append(pinned, unpinned...)
+
+	// Restore selection
+	if selectedPane != "" {
+		for i, s := range m.sessions {
+			if s.TmuxPane == selectedPane {
+				m.selected = i
+				break
+			}
+		}
+	}
 }
