@@ -33,18 +33,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reviewMode = false
 			m.reviewModel = nil
 			m.lastCapture = "" // Force viewport refresh
-			// Restart capture polling and fetch immediately
+			// Restart all polling loops
 			if sel := m.selectedSession(); sel != nil {
-				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
+				return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
 			}
+			return m, tea.Batch(tickCapture(), tickSessionRefresh())
 		} else if reviewModel.Cancelled() {
 			m.reviewMode = false
 			m.reviewModel = nil
 			m.lastCapture = "" // Force viewport refresh
-			// Restart capture polling and fetch immediately
+			// Restart all polling loops
 			if sel := m.selectedSession(); sel != nil {
-				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
+				return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
 			}
+			return m, tea.Batch(tickCapture(), tickSessionRefresh())
 		}
 
 		return m, cmd
@@ -64,17 +66,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pickerMode = false
 			m.pickerModel = nil
 			m.lastCapture = "" // Force viewport refresh
-			// Refresh session list and restart capture polling
-			return m, tea.Batch(discoverSessions(), tickCapture())
+			// Refresh session list and restart all polling loops
+			// Note: Claude may take a moment to start, so auto-refresh will pick it up
+			return m, tea.Batch(discoverSessions(), tickCapture(), tickSessionRefresh())
 		} else if pickerModel.Cancelled() {
 			m.pickerMode = false
 			m.pickerModel = nil
 			m.lastCapture = "" // Force viewport refresh
-			// Restart capture polling
+			// Restart all polling loops
 			if sel := m.selectedSession(); sel != nil {
-				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
+				return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
 			}
-			return m, tickCapture()
+			return m, tea.Batch(tickCapture(), tickSessionRefresh())
 		}
 
 		return m, cmd
