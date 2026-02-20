@@ -16,6 +16,7 @@
 - [x] Scroll % indicator anchored to top-right of output header
 - [x] Distinct insert-mode status bar (pastel amber)
 - [x] `--help` CLI output
+- [x] Diff review mode (`d`) — review git diff with inline comments, submit feedback to agent
 
 ## In progress / next
 

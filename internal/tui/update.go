@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/shnupta/herd/internal/diff"
 	"github.com/shnupta/herd/internal/hook"
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/state"
@@ -17,6 +18,37 @@ import (
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// If in review mode, delegate to review model
+	if m.reviewMode && m.reviewModel != nil {
+		updated, cmd := m.reviewModel.Update(msg)
+		reviewModel := updated.(ReviewModel)
+		m.reviewModel = &reviewModel
+
+		if reviewModel.Submitted() {
+			// Send feedback to the agent via stdin
+			if sel := m.selectedSession(); sel != nil && reviewModel.FeedbackText() != "" {
+				_ = tmux.SendKeys(sel.TmuxPane, reviewModel.FeedbackText())
+			}
+			m.reviewMode = false
+			m.reviewModel = nil
+			m.lastCapture = "" // Force viewport refresh
+			// Restart capture polling and fetch immediately
+			if sel := m.selectedSession(); sel != nil {
+				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
+			}
+		} else if reviewModel.Cancelled() {
+			m.reviewMode = false
+			m.reviewModel = nil
+			m.lastCapture = "" // Force viewport refresh
+			// Restart capture polling and fetch immediately
+			if sel := m.selectedSession(); sel != nil {
+				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
+			}
+		}
+
+		return m, cmd
+	}
 
 	switch msg := msg.(type) {
 
@@ -157,6 +189,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.Worktree):
 			// TODO: worktree panel
+
+		case key.Matches(msg, keys.Review):
+			// Open diff review for the selected session's project
+			if sel := m.selectedSession(); sel != nil {
+				gitRoot, err := diff.GetGitRoot(sel.ProjectPath)
+				if err == nil {
+					diffText, err := diff.GetGitDiff(gitRoot)
+					if err == nil && diffText != "" {
+						parsed, err := diff.Parse(diffText)
+						if err == nil && !parsed.IsEmpty() {
+							sessionID := sel.ID
+							if sessionID == "" {
+								sessionID = sel.TmuxPane
+							}
+							reviewModel := NewReviewModel(parsed, sessionID, gitRoot)
+							// Send initial size
+							updatedModel, _ := reviewModel.Update(tea.WindowSizeMsg{
+								Width:  m.width,
+								Height: m.height,
+							})
+							reviewModel = updatedModel.(ReviewModel)
+							m.reviewModel = &reviewModel
+							m.reviewMode = true
+						}
+					}
+				}
+			}
 		}
 
 	// ── Mouse ──────────────────────────────────────────────────────────────

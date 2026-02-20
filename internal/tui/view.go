@@ -20,6 +20,11 @@ func (m Model) View() string {
 		return fmt.Sprintf("error: %v\n\nPress q to quit.", m.err)
 	}
 
+	// If in review mode, show the review UI
+	if m.reviewMode && m.reviewModel != nil {
+		return m.reviewModel.View()
+	}
+
 	header := m.renderHeader()
 	outputHeader := m.renderOutputHeader()
 
@@ -165,6 +170,7 @@ func (m Model) renderHelp() string {
 		"[j/k] navigate",
 		"[i] insert",
 		"[t] jump",
+		"[d] diff review",
 		"[x] kill",
 		"[n] new",
 		"[w] worktrees",

@@ -13,6 +13,7 @@ type keyMap struct {
 	Refresh  key.Binding
 	Quit     key.Binding
 	Install  key.Binding
+	Review   key.Binding
 }
 
 var keys = keyMap{
@@ -51,6 +52,10 @@ var keys = keyMap{
 	Install: key.NewBinding(
 		key.WithKeys("I"),
 		key.WithHelp("I", "install hooks"),
+	),
+	Review: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "diff review"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),
