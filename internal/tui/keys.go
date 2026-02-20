@@ -18,6 +18,7 @@ type keyMap struct {
 	Pin      key.Binding
 	MoveUp   key.Binding
 	MoveDown key.Binding
+	Rename   key.Binding
 }
 
 var keys = keyMap{
@@ -80,5 +81,9 @@ var keys = keyMap{
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),
 		key.WithHelp("q", "quit"),
+	),
+	Rename: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("e", "rename"),
 	),
 }

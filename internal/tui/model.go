@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -8,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/shnupta/herd/internal/names"
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/sidebar"
 	"github.com/shnupta/herd/internal/state"
@@ -62,6 +64,14 @@ type Model struct {
 	pickerMode  bool         // true when in project picker mode
 	pickerModel *PickerModel // the picker sub-model
 
+	// Rename mode
+	renameMode  bool             // true when the rename overlay is open
+	renameInput textinput.Model  // text input for the rename overlay
+	renameKey   string           // session key being renamed
+
+	// Custom session names
+	namesStore *names.Store
+
 	// Pending selection after new session creation
 	pendingSelectPane string // pane ID to select after next session discovery
 
@@ -92,6 +102,10 @@ func New(w *state.Watcher) Model {
 	fi.Placeholder = "filter..."
 	fi.CharLimit = 100
 
+	ri := textinput.New()
+	ri.Placeholder = "session name..."
+	ri.CharLimit = 100
+
 	// Load persisted sidebar state
 	pinned := make(map[string]int)
 	var savedOrder []string
@@ -107,14 +121,21 @@ func New(w *state.Watcher) Model {
 		}
 	}
 
+	// Load persisted session names
+	home, _ := os.UserHomeDir()
+	ns := names.NewStore(home + "/.herd/names.json")
+	_ = ns.Load()
+
 	return Model{
 		spinner:      sp,
 		stateWatcher: w,
 		atBottom:     true,
 		filterInput:  fi,
+		renameInput:  ri,
 		pinned:       pinned,
 		pinCounter:   pinCounter,
 		savedOrder:   savedOrder,
+		namesStore:   ns,
 	}
 }
 
