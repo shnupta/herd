@@ -443,10 +443,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Forward scroll and other events to viewport when not in insert mode.
+	// Session-navigation keys (up/k, down/j) must not reach the viewport —
+	// the viewport has its own bindings for those keys and would scroll the
+	// content in addition to switching sessions, causing a visible flicker.
 	if !m.insertMode {
-		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
-		cmds = append(cmds, cmd)
+		if keyMsg, isKey := msg.(tea.KeyMsg); !isKey || (!key.Matches(keyMsg, keys.Up) && !key.Matches(keyMsg, keys.Down)) {
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	return m, tea.Batch(cmds...)
