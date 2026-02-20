@@ -141,6 +141,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Initial session discovery ──────────────────────────────────────────
 	case sessionsDiscoveredMsg:
+		// Save selected pane BEFORE replacing sessions list
+		var selectedPane string
+		if m.selected < len(m.sessions) {
+			selectedPane = m.sessions[m.selected].TmuxPane
+		}
+
 		existing := make(map[string]session.Session)
 		for _, s := range m.sessions {
 			existing[s.TmuxPane] = s
@@ -162,6 +168,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Sort sessions with pinned at top and apply saved order
 		m.sortSessions()
+
+		// Restore selection to the previously selected pane
+		if selectedPane != "" {
+			for i, s := range m.sessions {
+				if s.TmuxPane == selectedPane {
+					m.selected = i
+					break
+				}
+			}
+		}
 		if m.selected >= len(m.sessions) {
 			m.selected = maxInt(0, len(m.sessions)-1)
 		}
