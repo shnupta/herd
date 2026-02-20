@@ -138,6 +138,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 			m.ready = true
 		}
+		// Resize the observed pane to match the new viewport dimensions so
+		// that Claude formats its output to fit what we can display.
+		if sel := m.selectedSession(); sel != nil {
+			cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+		}
 
 	// ── Initial session discovery ──────────────────────────────────────────
 	case sessionsDiscoveredMsg:
@@ -196,6 +201,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if states, err := state.ReadAll(); err == nil {
 			m = m.applyStates(states)
 		}
+		// Resize the newly selected pane (viewport dimensions are known once ready).
+		if m.ready {
+			if sel := m.selectedSession(); sel != nil {
+				cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+			}
+		}
 
 	// ── Session list auto-refresh ──────────────────────────────────────────
 	case sessionRefreshMsg:
@@ -211,8 +222,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case captureMsg:
 		if sel := m.selectedSession(); sel != nil && sel.TmuxPane == msg.paneID && msg.content != m.lastCapture {
 			m.lastCapture = msg.content
-			m.cursorX = msg.cursorX
-			m.cursorY = msg.cursorY
 			// After a session switch, always jump to the bottom of the new session's
 			// output rather than inheriting the scroll position from the previous one.
 			if m.pendingGotoBottom {
@@ -222,13 +231,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.atBottom = m.viewport.AtBottom()
 			}
 
-			// Render cursor into content if viewport is at bottom (showing live output)
-			content := cleanCapture(msg.content)
-			if m.atBottom && msg.paneHeight > 0 {
-				content = renderCursor(content, msg.cursorX, msg.cursorY, msg.paneHeight)
-			}
-
-			m.viewport.SetContent(truncateLines(content, m.viewport.Width))
+			m.viewport.SetContent(truncateLines(cleanCapture(msg.content), m.viewport.Width))
 			if m.atBottom {
 				m.viewport.GotoBottom()
 			}
@@ -267,6 +270,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 		case key.Matches(msg, keys.Quit):
+			// Restore auto-sizing on all observed panes before quitting so
+			// Claude sessions return to their natural terminal dimensions.
+			for _, s := range m.sessions {
+				_ = tmux.ResizePaneAuto(s.TmuxPane)
+			}
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
@@ -274,6 +282,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected--
 				m.lastCapture = ""
 				m.pendingGotoBottom = true
+				if sel := m.selectedSession(); sel != nil {
+					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+				}
 			}
 
 		case key.Matches(msg, keys.Down):
@@ -281,6 +292,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected++
 				m.lastCapture = ""
 				m.pendingGotoBottom = true
+				if sel := m.selectedSession(); sel != nil {
+					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+				}
 			}
 
 		case key.Matches(msg, keys.Jump):
@@ -436,6 +450,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selected = idx
 						m.lastCapture = ""
 						m.pendingGotoBottom = true
+						if sel := m.selectedSession(); sel != nil {
+							cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+						}
 					}
 				}
 			}
@@ -554,20 +571,26 @@ func forwardKey(paneID string, msg tea.KeyMsg) error {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+// resizePaneToViewport resizes the tmux window containing paneID to width×height
+// so that the observed session formats its output to fit the herd viewport.
+// This is a fire-and-forget async command; errors are silently ignored.
+func resizePaneToViewport(paneID string, width, height int) tea.Cmd {
+	if paneID == "" || width <= 0 || height <= 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		_ = tmux.ResizeWindow(paneID, width, height)
+		return nil
+	}
+}
+
 func fetchCapture(paneID string) tea.Cmd {
 	return func() tea.Msg {
 		content, err := tmux.CapturePane(paneID, 2000)
 		if err != nil {
 			return nil
 		}
-		cursorX, cursorY, paneHeight, _ := tmux.PaneInfo(paneID)
-		return captureMsg{
-			paneID:     paneID,
-			content:    content,
-			cursorX:    cursorX,
-			cursorY:    cursorY,
-			paneHeight: paneHeight,
-		}
+		return captureMsg{paneID: paneID, content: content}
 	}
 }
 
@@ -736,85 +759,3 @@ func maxInt(a, b int) int {
 	return b
 }
 
-// renderCursor inserts a cursor indicator at the specified position in the content.
-// cursorX is the column, cursorY is the row (0-indexed from the end of content,
-// since we show the bottom of the capture which corresponds to the visible pane).
-// Returns the modified content.
-func renderCursor(content string, cursorX, cursorY, paneHeight int) string {
-	lines := strings.Split(content, "\n")
-	
-	// Calculate which line in the capture corresponds to cursorY
-	// cursorY is 0-indexed from top of visible pane
-	// The last paneHeight lines of capture are the visible area
-	visibleStart := len(lines) - paneHeight
-	if visibleStart < 0 {
-		visibleStart = 0
-	}
-	targetLine := visibleStart + cursorY
-	
-	if targetLine < 0 || targetLine >= len(lines) {
-		return content
-	}
-	
-	line := lines[targetLine]
-	
-	// Calculate visual position accounting for ANSI escape codes
-	visualPos := 0
-	bytePos := 0
-	inEscape := false
-	
-	for i, r := range line {
-		if inEscape {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEscape = false
-			}
-			bytePos = i + 1
-			continue
-		}
-		if r == '\x1b' {
-			inEscape = true
-			bytePos = i + 1
-			continue
-		}
-		if visualPos == cursorX {
-			bytePos = i
-			break
-		}
-		visualPos++
-		bytePos = i + len(string(r))
-	}
-	
-	// Insert cursor indicator (inverse video block)
-	// Using ANSI: \x1b[7m for inverse, \x1b[27m to reset inverse
-	cursorChar := " "
-	if bytePos < len(line) {
-		// Get the character at cursor position
-		rest := line[bytePos:]
-		for _, r := range rest {
-			if r != '\x1b' {
-				cursorChar = string(r)
-				break
-			}
-		}
-	}
-	
-	cursor := "\x1b[7m" + cursorChar + "\x1b[27m"
-	
-	if bytePos >= len(line) {
-		// Cursor is at end of line
-		lines[targetLine] = line + cursor
-	} else {
-		// Insert cursor, skipping the character it replaces
-		nextCharLen := len(cursorChar)
-		if nextCharLen == 0 {
-			nextCharLen = 1
-		}
-		endPos := bytePos + nextCharLen
-		if endPos > len(line) {
-			endPos = len(line)
-		}
-		lines[targetLine] = line[:bytePos] + cursor + line[endPos:]
-	}
-	
-	return strings.Join(lines, "\n")
-}
