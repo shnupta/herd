@@ -19,65 +19,77 @@ import (
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	// If in review mode, delegate to review model
+	// If in review mode, delegate only relevant messages to review model
+	// Other messages (ticks, refresh, etc.) continue to main handler
 	if m.reviewMode && m.reviewModel != nil {
-		updated, cmd := m.reviewModel.Update(msg)
-		reviewModel := updated.(ReviewModel)
-		m.reviewModel = &reviewModel
+		switch msg.(type) {
+		case tea.KeyMsg, tea.WindowSizeMsg, tea.MouseMsg:
+			updated, cmd := m.reviewModel.Update(msg)
+			reviewModel := updated.(ReviewModel)
+			m.reviewModel = &reviewModel
 
-		if reviewModel.Submitted() {
-			// Send feedback to the agent via stdin
-			if sel := m.selectedSession(); sel != nil && reviewModel.FeedbackText() != "" {
-				_ = tmux.SendKeys(sel.TmuxPane, reviewModel.FeedbackText())
+			if reviewModel.Submitted() {
+				// Send feedback to the agent via stdin
+				if sel := m.selectedSession(); sel != nil && reviewModel.FeedbackText() != "" {
+					_ = tmux.SendKeys(sel.TmuxPane, reviewModel.FeedbackText())
+				}
+				m.reviewMode = false
+				m.reviewModel = nil
+				m.lastCapture = "" // Force viewport refresh
+				// Restart all polling loops
+				if sel := m.selectedSession(); sel != nil {
+					return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+				}
+				return m, tea.Batch(tickCapture(), tickSessionRefresh())
+			} else if reviewModel.Cancelled() {
+				m.reviewMode = false
+				m.reviewModel = nil
+				m.lastCapture = "" // Force viewport refresh
+				// Restart all polling loops
+				if sel := m.selectedSession(); sel != nil {
+					return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+				}
+				return m, tea.Batch(tickCapture(), tickSessionRefresh())
 			}
-			m.reviewMode = false
-			m.reviewModel = nil
-			m.lastCapture = "" // Force viewport refresh
-			// Restart capture polling and fetch immediately
-			if sel := m.selectedSession(); sel != nil {
-				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
-			}
-		} else if reviewModel.Cancelled() {
-			m.reviewMode = false
-			m.reviewModel = nil
-			m.lastCapture = "" // Force viewport refresh
-			// Restart capture polling and fetch immediately
-			if sel := m.selectedSession(); sel != nil {
-				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
-			}
+
+			return m, cmd
 		}
-
-		return m, cmd
+		// Other messages fall through to main handler
 	}
 
-	// If in picker mode, delegate to picker model
+	// If in picker mode, delegate only relevant messages to picker model
+	// Other messages (ticks, refresh, etc.) continue to main handler
 	if m.pickerMode && m.pickerModel != nil {
-		updated, cmd := m.pickerModel.Update(msg)
-		pickerModel := updated.(PickerModel)
-		m.pickerModel = &pickerModel
+		switch msg.(type) {
+		case tea.KeyMsg, tea.WindowSizeMsg:
+			updated, cmd := m.pickerModel.Update(msg)
+			pickerModel := updated.(PickerModel)
+			m.pickerModel = &pickerModel
 
-		if pickerModel.ChosenPath() != "" {
-			// Launch new session and remember the pane ID for selection
-			if paneID, err := LaunchSession(pickerModel.ChosenPath()); err == nil {
-				m.pendingSelectPane = paneID
+			if pickerModel.ChosenPath() != "" {
+				// Launch new session and remember the pane ID for selection
+				if paneID, err := LaunchSession(pickerModel.ChosenPath()); err == nil {
+					m.pendingSelectPane = paneID
+				}
+				m.pickerMode = false
+				m.pickerModel = nil
+				m.lastCapture = "" // Force viewport refresh
+				// Refresh session list and restart capture polling
+				return m, tea.Batch(discoverSessions(), tickCapture(), tickSessionRefresh())
+			} else if pickerModel.Cancelled() {
+				m.pickerMode = false
+				m.pickerModel = nil
+				m.lastCapture = "" // Force viewport refresh
+				// Restart capture polling
+				if sel := m.selectedSession(); sel != nil {
+					return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+				}
+				return m, tea.Batch(tickCapture(), tickSessionRefresh())
 			}
-			m.pickerMode = false
-			m.pickerModel = nil
-			m.lastCapture = "" // Force viewport refresh
-			// Refresh session list and restart capture polling
-			return m, tea.Batch(discoverSessions(), tickCapture())
-		} else if pickerModel.Cancelled() {
-			m.pickerMode = false
-			m.pickerModel = nil
-			m.lastCapture = "" // Force viewport refresh
-			// Restart capture polling
-			if sel := m.selectedSession(); sel != nil {
-				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
-			}
-			return m, tickCapture()
+
+			return m, cmd
 		}
-
-		return m, cmd
+		// Other messages fall through to main handler
 	}
 
 	// If in filter mode, handle filter input
