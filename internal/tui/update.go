@@ -50,6 +50,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// If in picker mode, delegate to picker model
+	if m.pickerMode && m.pickerModel != nil {
+		updated, cmd := m.pickerModel.Update(msg)
+		pickerModel := updated.(PickerModel)
+		m.pickerModel = &pickerModel
+
+		if pickerModel.ChosenPath() != "" {
+			// Launch new session
+			_ = LaunchSession(pickerModel.ChosenPath())
+			m.pickerMode = false
+			m.pickerModel = nil
+			// Refresh session list to pick up the new session
+			return m, discoverSessions()
+		} else if pickerModel.Cancelled() {
+			m.pickerMode = false
+			m.pickerModel = nil
+		}
+
+		return m, cmd
+	}
+
 	// If in filter mode, handle filter input
 	if m.filterMode {
 		switch msg := msg.(type) {
@@ -221,7 +242,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, keys.New):
-			// TODO: project selector modal
+			// Open project picker to create new session
+			var existingPaths []string
+			for _, s := range m.sessions {
+				if s.ProjectPath != "" {
+					existingPaths = append(existingPaths, s.ProjectPath)
+				}
+			}
+			pickerModel := NewPickerModel(existingPaths)
+			// Send initial size
+			updatedModel, _ := pickerModel.Update(tea.WindowSizeMsg{
+				Width:  m.width,
+				Height: m.height,
+			})
+			pickerModel = updatedModel.(PickerModel)
+			m.pickerModel = &pickerModel
+			m.pickerMode = true
 
 		case key.Matches(msg, keys.Worktree):
 			// TODO: worktree panel

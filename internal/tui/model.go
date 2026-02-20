@@ -56,6 +56,10 @@ type Model struct {
 	reviewMode  bool         // true when in diff review mode
 	reviewModel *ReviewModel // the review sub-model
 
+	// Project picker mode
+	pickerMode  bool         // true when in project picker mode
+	pickerModel *PickerModel // the picker sub-model
+
 	// State
 	spinner  spinner.Model
 	stateWatcher *state.Watcher

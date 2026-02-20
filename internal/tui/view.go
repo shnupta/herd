@@ -25,6 +25,11 @@ func (m Model) View() string {
 		return m.reviewModel.View()
 	}
 
+	// If in picker mode, show the project picker
+	if m.pickerMode && m.pickerModel != nil {
+		return m.pickerModel.View()
+	}
+
 	header := m.renderHeader()
 	outputHeader := m.renderOutputHeader()
 
