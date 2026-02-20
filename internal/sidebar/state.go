@@ -16,23 +16,24 @@ type State struct {
 	Order []string `json:"order"`
 }
 
-var (
-	stateMu   sync.Mutex
-	statePath string
-)
+// Store manages sidebar state persistence for a specific file path.
+type Store struct {
+	path string
+	mu   sync.Mutex
+}
 
-func init() {
-	home, _ := os.UserHomeDir()
-	statePath = filepath.Join(home, ".herd", "sidebar.json")
+// NewStore creates a new Store backed by the given file path.
+func NewStore(path string) *Store {
+	return &Store{path: path}
 }
 
 // Load reads the sidebar state from disk.
 // Returns empty state if file doesn't exist.
-func Load() (*State, error) {
-	stateMu.Lock()
-	defer stateMu.Unlock()
+func (s *Store) Load() (*State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	data, err := os.ReadFile(statePath)
+	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &State{
@@ -43,31 +44,47 @@ func Load() (*State, error) {
 		return nil, err
 	}
 
-	var s State
-	if err := json.Unmarshal(data, &s); err != nil {
+	var st State
+	if err := json.Unmarshal(data, &st); err != nil {
 		return nil, err
 	}
-	if s.Pinned == nil {
-		s.Pinned = make(map[string]int)
+	if st.Pinned == nil {
+		st.Pinned = make(map[string]int)
 	}
-	return &s, nil
+	return &st, nil
 }
 
 // Save writes the sidebar state to disk.
-func Save(s *State) error {
-	stateMu.Lock()
-	defer stateMu.Unlock()
+func (s *Store) Save(st *State) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(statePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
 		return err
 	}
 
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(statePath, data, 0644)
+	return os.WriteFile(s.path, data, 0644)
+}
+
+var defaultStore *Store
+
+func init() {
+	home, _ := os.UserHomeDir()
+	defaultStore = NewStore(filepath.Join(home, ".herd", "sidebar.json"))
+}
+
+// Load reads the sidebar state from disk using the default store.
+func Load() (*State, error) {
+	return defaultStore.Load()
+}
+
+// Save writes the sidebar state to disk using the default store.
+func Save(s *State) error {
+	return defaultStore.Save(s)
 }
 
 // Cleanup removes entries for projects that are no longer active.

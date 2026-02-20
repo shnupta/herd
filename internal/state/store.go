@@ -18,42 +18,51 @@ type SessionState struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// Store manages session state files in a directory.
+type Store struct {
+	dir string
+}
+
+// NewStore creates a new Store for the given directory.
+func NewStore(dir string) *Store {
+	return &Store{dir: dir}
+}
+
 // Dir returns the directory where state files are stored.
-func Dir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".herd", "sessions")
+func (s *Store) Dir() string {
+	return s.dir
 }
 
 // Path returns the state file path for a given session ID.
-func Path(sessionID string) string {
-	return filepath.Join(Dir(), sessionID+".json")
+func (s *Store) Path(sessionID string) string {
+	return filepath.Join(s.dir, sessionID+".json")
 }
 
 // Write atomically writes the state for a session.
-func Write(s SessionState) error {
-	if err := os.MkdirAll(Dir(), 0o755); err != nil {
+func (s *Store) Write(ss SessionState) error {
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
 
-	data, err := json.Marshal(s)
+	data, err := json.Marshal(ss)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
 
 	// Write to temp file then rename for atomicity.
-	tmp := Path(s.SessionID) + ".tmp"
+	tmp := s.Path(ss.SessionID) + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("write tmp: %w", err)
 	}
-	if err := os.Rename(tmp, Path(s.SessionID)); err != nil {
+	if err := os.Rename(tmp, s.Path(ss.SessionID)); err != nil {
 		return fmt.Errorf("rename: %w", err)
 	}
 	return nil
 }
 
 // ReadAll loads all session state files from the state directory.
-func ReadAll() ([]SessionState, error) {
-	entries, err := os.ReadDir(Dir())
+func (s *Store) ReadAll() ([]SessionState, error) {
+	entries, err := os.ReadDir(s.dir)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -66,15 +75,34 @@ func ReadAll() ([]SessionState, error) {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(Dir(), e.Name()))
+		data, err := os.ReadFile(filepath.Join(s.dir, e.Name()))
 		if err != nil {
 			continue
 		}
-		var s SessionState
-		if err := json.Unmarshal(data, &s); err != nil {
+		var ss SessionState
+		if err := json.Unmarshal(data, &ss); err != nil {
 			continue
 		}
-		states = append(states, s)
+		states = append(states, ss)
 	}
 	return states, nil
 }
+
+var defaultStore *Store
+
+func init() {
+	home, _ := os.UserHomeDir()
+	defaultStore = NewStore(filepath.Join(home, ".herd", "sessions"))
+}
+
+// Dir returns the directory where state files are stored.
+func Dir() string { return defaultStore.Dir() }
+
+// Path returns the state file path for a given session ID.
+func Path(sessionID string) string { return defaultStore.Path(sessionID) }
+
+// Write atomically writes the state for a session.
+func Write(ss SessionState) error { return defaultStore.Write(ss) }
+
+// ReadAll loads all session state files from the state directory.
+func ReadAll() ([]SessionState, error) { return defaultStore.ReadAll() }

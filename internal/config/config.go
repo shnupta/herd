@@ -27,11 +27,11 @@ func configPath() string {
 	return filepath.Join(home, ".herd", "config.json")
 }
 
-// Load reads the config from disk, or returns defaults if not found.
-func Load() Config {
+// LoadFrom reads the config from the given path, or returns defaults if not found or invalid.
+func LoadFrom(path string) Config {
 	cfg := DefaultConfig()
 
-	data, err := os.ReadFile(configPath())
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return cfg
 	}
@@ -50,9 +50,8 @@ func Load() Config {
 	return cfg
 }
 
-// Save writes the config to disk.
-func Save(cfg Config) error {
-	path := configPath()
+// SaveTo writes the config to the given path.
+func SaveTo(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -63,6 +62,16 @@ func Save(cfg Config) error {
 	}
 
 	return os.WriteFile(path, data, 0o644)
+}
+
+// Load reads the config from disk, or returns defaults if not found.
+func Load() Config {
+	return LoadFrom(configPath())
+}
+
+// Save writes the config to disk.
+func Save(cfg Config) error {
+	return SaveTo(configPath(), cfg)
 }
 
 // GetProjectDirs returns directories to scan for projects.

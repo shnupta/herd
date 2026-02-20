@@ -14,20 +14,20 @@ import (
 // Comment represents a review comment on a specific location.
 type Comment struct {
 	FilePath  string    `json:"file_path"`
-	LineNum   int       `json:"line_num"`    // Line number in the new file
-	HunkIndex int       `json:"hunk_index"`  // Which hunk this comment is on
-	LineIndex int       `json:"line_index"`  // Index within the hunk's lines
+	LineNum   int       `json:"line_num"`   // Line number in the new file
+	HunkIndex int       `json:"hunk_index"` // Which hunk this comment is on
+	LineIndex int       `json:"line_index"` // Index within the hunk's lines
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // Review represents a complete review session.
 type Review struct {
-	SessionID string    `json:"session_id"`
-	ProjectPath string  `json:"project_path"`
-	Comments  []Comment `json:"comments"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	SessionID   string    `json:"session_id"`
+	ProjectPath string    `json:"project_path"`
+	Comments    []Comment `json:"comments"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // NewReview creates a new review for the given session.
@@ -116,7 +116,7 @@ func (r *Review) FormatFeedback(d *diff.Diff) string {
 			// Find the relevant lines from the diff
 			if comment.HunkIndex < len(file.Hunks) {
 				hunk := file.Hunks[comment.HunkIndex]
-				
+
 				// Get context: the commented line and a few around it
 				startIdx := comment.LineIndex
 				if startIdx < 0 {
@@ -148,54 +148,83 @@ func (r *Review) FormatFeedback(d *diff.Diff) string {
 	return sb.String()
 }
 
-// Storage paths
+// Storage manages review persistence for a specific directory.
+type Storage struct {
+	dir string
+}
+
+// NewStorage creates a new Storage backed by the given directory.
+func NewStorage(dir string) *Storage {
+	return &Storage{dir: dir}
+}
+
+func (s *Storage) path(sessionID string) string {
+	return filepath.Join(s.dir, sessionID+".json")
+}
+
+// Save persists the review to the storage directory.
+func (s *Storage) Save(r *Review) error {
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.path(r.SessionID), data, 0o644)
+}
+
+// Load loads a review from the storage directory.
+func (s *Storage) Load(sessionID string) (*Review, error) {
+	data, err := os.ReadFile(s.path(sessionID))
+	if err != nil {
+		return nil, err
+	}
+	var r Review
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// Delete removes a saved review from the storage directory.
+func (s *Storage) Delete(sessionID string) error {
+	return os.Remove(s.path(sessionID))
+}
+
+// Exists checks if a saved review exists for the session.
+func (s *Storage) Exists(sessionID string) bool {
+	_, err := os.Stat(s.path(sessionID))
+	return err == nil
+}
 
 func reviewDir() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".herd", "reviews")
 }
 
-func reviewPath(sessionID string) string {
-	return filepath.Join(reviewDir(), sessionID+".json")
+var defaultStorage *Storage
+
+func init() {
+	defaultStorage = NewStorage(reviewDir())
 }
 
 // Save persists the review to disk.
 func (r *Review) Save() error {
-	dir := reviewDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(reviewPath(r.SessionID), data, 0o644)
+	return defaultStorage.Save(r)
 }
 
 // Load loads a review from disk.
 func Load(sessionID string) (*Review, error) {
-	data, err := os.ReadFile(reviewPath(sessionID))
-	if err != nil {
-		return nil, err
-	}
-
-	var r Review
-	if err := json.Unmarshal(data, &r); err != nil {
-		return nil, err
-	}
-
-	return &r, nil
+	return defaultStorage.Load(sessionID)
 }
 
 // Delete removes a saved review from disk.
 func Delete(sessionID string) error {
-	return os.Remove(reviewPath(sessionID))
+	return defaultStorage.Delete(sessionID)
 }
 
 // Exists checks if a saved review exists for the session.
 func Exists(sessionID string) bool {
-	_, err := os.Stat(reviewPath(sessionID))
-	return err == nil
+	return defaultStorage.Exists(sessionID)
 }
