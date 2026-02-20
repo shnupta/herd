@@ -19,6 +19,7 @@
 - [x] Diff review mode (`d`) — review git diff with inline comments, submit feedback to agent
 - [x] Filter/search (`/`) — fuzzy filter session list
 - [x] Aggregate stats in header — shows count of sessions by state
+- [x] New session (`n`) — project picker to launch claude in a new tmux window
 
 ## In progress / next
 
@@ -34,10 +35,6 @@ Hide/show individual sessions or whole groups from the sidebar.
 Assign a custom label to a session that persists across herd restarts.
 Stored in `~/.herd/names.json`, keyed by Claude session ID falling back to pane ID.
 Edit with a prompt overlay (e.g. `e` key).
-
-### New session (`n`)
-Project picker modal: list recently used directories (from existing sessions +
-a configurable search path), select one, launch `claude` in a new tmux window.
 
 ### Worktrees (`w`)
 For the selected session's project, list git worktrees.
