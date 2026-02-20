@@ -58,29 +58,31 @@ type flatLine struct {
 
 // ReviewKeyMap defines the key bindings for the review UI.
 type ReviewKeyMap struct {
-	Up       key.Binding
-	Down     key.Binding
-	NextHunk key.Binding
-	PrevHunk key.Binding
-	NextFile key.Binding
-	PrevFile key.Binding
-	Comment  key.Binding
-	Submit   key.Binding
-	Pause    key.Binding
-	Quit     key.Binding
+	Up        key.Binding
+	Down      key.Binding
+	NextHunk  key.Binding
+	PrevHunk  key.Binding
+	NextFile  key.Binding
+	PrevFile  key.Binding
+	Comment   key.Binding
+	Delete    key.Binding
+	Submit    key.Binding
+	Pause     key.Binding
+	Quit      key.Binding
 }
 
 var reviewKeys = ReviewKeyMap{
-	Up:       key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
-	Down:     key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
-	NextHunk: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "next hunk")),
-	PrevHunk: key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "prev hunk")),
-	NextFile: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "next file")),
-	PrevFile: key.NewBinding(key.WithKeys("F"), key.WithHelp("F", "prev file")),
-	Comment:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "comment")),
-	Submit:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "submit")),
-	Pause:    key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "pause")),
-	Quit:     key.NewBinding(key.WithKeys("q", "esc"), key.WithHelp("q/esc", "cancel")),
+	Up:        key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
+	Down:      key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
+	NextHunk:  key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "next hunk")),
+	PrevHunk:  key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "prev hunk")),
+	NextFile:  key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "next file")),
+	PrevFile:  key.NewBinding(key.WithKeys("F"), key.WithHelp("F", "prev file")),
+	Comment:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "comment/edit")),
+	Delete:    key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "delete comment")),
+	Submit:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "submit")),
+	Pause:     key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "pause")),
+	Quit:      key.NewBinding(key.WithKeys("q", "esc"), key.WithHelp("q/esc", "cancel")),
 }
 
 // Styles for the review UI
@@ -265,10 +267,25 @@ func (m ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, reviewKeys.Comment):
 			if len(m.flatLines) > 0 && !m.flatLines[m.flatIndex].isHeader {
 				m.commenting = true
-				// Pre-fill with existing comment if any
+				// Pre-fill with existing comment if any (for editing)
 				fl := m.flatLines[m.flatIndex]
 				if c := m.review.GetCommentForLine(fl.file.GetFilePath(), fl.hunkIndex, fl.lineIndex); c != nil {
 					m.textarea.SetValue(c.Text)
+				}
+			}
+
+		case key.Matches(msg, reviewKeys.Delete):
+			// Delete comment at current line
+			if len(m.flatLines) > 0 && !m.flatLines[m.flatIndex].isHeader {
+				fl := m.flatLines[m.flatIndex]
+				filePath := fl.file.GetFilePath()
+				// Find and remove the comment
+				for i, c := range m.review.Comments {
+					if c.FilePath == filePath && c.HunkIndex == fl.hunkIndex && c.LineIndex == fl.lineIndex {
+						m.review.RemoveComment(i)
+						m.updateViewportContent()
+						break
+					}
 				}
 			}
 
@@ -539,7 +556,7 @@ func (m ReviewModel) View() string {
 	}
 
 	// Help
-	helpText := "[j/k] navigate  [n/N] hunk  [f/F] file  [c] comment  [s] submit  [p] pause  [q] cancel"
+	helpText := "[j/k] navigate  [n/N] hunk  [f/F] file  [c] comment  [x] delete  [s] submit  [p] pause  [q] cancel"
 	if m.commenting {
 		helpText = "[Enter] save comment  [Esc] cancel"
 	}
