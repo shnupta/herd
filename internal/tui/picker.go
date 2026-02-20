@@ -2,7 +2,6 @@ package tui
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -271,15 +270,7 @@ func LaunchSession(projectPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Resolve the absolute path to the claude binary using herd's own PATH.
-	// The new tmux window may start a non-login shell whose PATH doesn't
-	// include wherever claude is installed, so passing the full path avoids
-	// a "command not found" failure that would silently close the window.
-	claudePath, err := exec.LookPath("claude")
-	if err != nil {
-		claudePath = "claude" // fall back; error will surface when tmux tries to run it
-	}
-	return tmux.NewWindow(sess, projectPath, claudePath)
+	return tmux.NewWindow(sess, projectPath, "claude")
 }
 
 func shortenPath(p string) string {
