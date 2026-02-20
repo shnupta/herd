@@ -134,7 +134,10 @@ func (m PickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, pickerKeys.Select):
-			if len(m.filtered) > 0 && m.selected < len(m.filtered) {
+			// Check if input is a custom path
+			if customPath := m.getCustomPath(); customPath != "" {
+				m.chosenPath = customPath
+			} else if len(m.filtered) > 0 && m.selected < len(m.filtered) {
 				m.chosenPath = m.filtered[m.selected]
 			}
 			return m, nil
@@ -209,7 +212,22 @@ func (m PickerModel) View() string {
 		end = len(m.filtered)
 	}
 
-	if len(m.filtered) == 0 {
+	// Check if using custom path mode
+	customPath := m.getCustomPath()
+	if customPath != "" {
+		// Show the custom path as the selection
+		customStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#10B981")).
+			Bold(true).
+			PaddingLeft(2)
+		sb.WriteString(customStyle.Render("▸ " + shortenPath(customPath) + " (custom)") + "\n")
+	} else if m.isCustomPathMode() {
+		// Input looks like a path but isn't valid
+		invalidStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#EF4444")).
+			PaddingLeft(2)
+		sb.WriteString(invalidStyle.Render("  Invalid directory path") + "\n")
+	} else if len(m.filtered) == 0 {
 		sb.WriteString(pickerItemStyle.Render("No matching projects") + "\n")
 	} else {
 		for i := start; i < end; i++ {
@@ -226,7 +244,11 @@ func (m PickerModel) View() string {
 
 	// Help
 	sb.WriteString("\n")
-	sb.WriteString(pickerHelpStyle.Render("[↑/↓] navigate  [enter] select  [esc] cancel"))
+	helpText := "[↑/↓] navigate  [enter] select  [esc] cancel"
+	if !m.isCustomPathMode() {
+		helpText += "  [type path] custom dir"
+	}
+	sb.WriteString(pickerHelpStyle.Render(helpText))
 
 	return sb.String()
 }
@@ -257,6 +279,46 @@ func shortenPath(p string) string {
 		return "~" + p[len(home):]
 	}
 	return p
+}
+
+// expandPath expands ~ to home directory.
+func expandPath(p string) string {
+	if strings.HasPrefix(p, "~/") {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, p[2:])
+	}
+	if p == "~" {
+		home, _ := os.UserHomeDir()
+		return home
+	}
+	return p
+}
+
+// getCustomPath returns the expanded path if the input looks like a custom path
+// and is a valid directory.
+func (m PickerModel) getCustomPath() string {
+	input := strings.TrimSpace(m.textinput.Value())
+	
+	// Check if it looks like a path
+	if !strings.HasPrefix(input, "/") && !strings.HasPrefix(input, "~") {
+		return ""
+	}
+	
+	expanded := expandPath(input)
+	
+	// Check if it's a valid directory
+	info, err := os.Stat(expanded)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	
+	return expanded
+}
+
+// isCustomPathMode returns true if the input is being treated as a custom path.
+func (m PickerModel) isCustomPathMode() bool {
+	input := strings.TrimSpace(m.textinput.Value())
+	return strings.HasPrefix(input, "/") || strings.HasPrefix(input, "~")
 }
 
 func min(a, b int) int {
