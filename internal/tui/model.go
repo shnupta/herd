@@ -43,11 +43,12 @@ type Model struct {
 	selected int
 
 	// Output panel
-	viewport    viewport.Model
-	lastCapture string // raw content from last capture-pane
-	atBottom    bool   // whether viewport was at the bottom before update
-	cursorX     int    // cursor column in pane
-	cursorY     int    // cursor row in pane (0-indexed from top of visible area)
+	viewport          viewport.Model
+	lastCapture       string // raw content from last capture-pane
+	atBottom          bool   // whether viewport was at the bottom before update
+	pendingGotoBottom bool   // true after a session switch; forces GotoBottom on next capture
+	cursorX           int    // cursor column in pane
+	cursorY           int    // cursor row in pane (0-indexed from top of visible area)
 
 	// Input
 	insertMode bool // true when keystrokes are forwarded to the selected pane
