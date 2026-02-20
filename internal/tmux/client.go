@@ -275,6 +275,37 @@ func PaneHeight(paneID string) (int, error) {
 	return h, nil
 }
 
+// PaneInfo returns the cursor position and pane height in a single tmux call,
+// reducing the window for tearing between separate display-message invocations.
+// cursorX is the column (0-indexed), cursorY is the row (0-indexed from top of
+// visible area), paneHeight is the height of the pane in rows.
+func PaneInfo(paneID string) (cursorX, cursorY, paneHeight int, err error) {
+	out, err := exec.Command(
+		"tmux", "display-message", "-t", paneID, "-p",
+		"#{cursor_x} #{cursor_y} #{pane_height}",
+	).Output()
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("tmux display-message pane info: %w", err)
+	}
+	parts := strings.Fields(strings.TrimSpace(string(out)))
+	if len(parts) != 3 {
+		return 0, 0, 0, fmt.Errorf("unexpected pane info output: %s", out)
+	}
+	cursorX, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	cursorY, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	paneHeight, err = strconv.Atoi(parts[2])
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return cursorX, cursorY, paneHeight, nil
+}
+
 // ClientWidth returns the width of the current tmux client.
 func ClientWidth() (int, error) {
 	out, err := exec.Command("tmux", "display-message", "-p", "#{client_width}").Output()

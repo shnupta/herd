@@ -186,7 +186,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for i, s := range m.sessions {
 				if s.TmuxPane == m.pendingSelectPane {
 					m.selected = i
-					m.lastCapture = "" // Force viewport refresh
+					m.lastCapture = ""        // Force viewport refresh
+					m.pendingGotoBottom = true // Jump to bottom of new session
 					break
 				}
 			}
@@ -212,14 +213,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastCapture = msg.content
 			m.cursorX = msg.cursorX
 			m.cursorY = msg.cursorY
-			m.atBottom = m.viewport.AtBottom()
-			
+			// After a session switch, always jump to the bottom of the new session's
+			// output rather than inheriting the scroll position from the previous one.
+			if m.pendingGotoBottom {
+				m.atBottom = true
+				m.pendingGotoBottom = false
+			} else {
+				m.atBottom = m.viewport.AtBottom()
+			}
+
 			// Render cursor into content if viewport is at bottom (showing live output)
 			content := cleanCapture(msg.content)
 			if m.atBottom && msg.paneHeight > 0 {
 				content = renderCursor(content, msg.cursorX, msg.cursorY, msg.paneHeight)
 			}
-			
+
 			m.viewport.SetContent(truncateLines(content, m.viewport.Width))
 			if m.atBottom {
 				m.viewport.GotoBottom()
@@ -265,12 +273,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected > 0 {
 				m.selected--
 				m.lastCapture = ""
+				m.pendingGotoBottom = true
 			}
 
 		case key.Matches(msg, keys.Down):
 			if m.selected < len(m.sessions)-1 {
 				m.selected++
 				m.lastCapture = ""
+				m.pendingGotoBottom = true
 			}
 
 		case key.Matches(msg, keys.Jump):
@@ -304,6 +314,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selected = maxInt(0, len(m.sessions)-1)
 					}
 					m.lastCapture = ""
+					m.pendingGotoBottom = true
 					// Cleanup and save sidebar state
 					m.cleanupSidebarState()
 					m.saveSidebarState()
@@ -389,6 +400,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.selected--
 				m.lastCapture = ""
+				m.pendingGotoBottom = true
 				m.saveSidebarState()
 			}
 
@@ -405,6 +417,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.selected++
 				m.lastCapture = ""
+				m.pendingGotoBottom = true
 				m.saveSidebarState()
 			}
 		}
@@ -422,6 +435,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selected != idx {
 						m.selected = idx
 						m.lastCapture = ""
+						m.pendingGotoBottom = true
 					}
 				}
 			}
@@ -541,8 +555,7 @@ func fetchCapture(paneID string) tea.Cmd {
 		if err != nil {
 			return nil
 		}
-		cursorX, cursorY, _ := tmux.CursorPosition(paneID)
-		paneHeight, _ := tmux.PaneHeight(paneID)
+		cursorX, cursorY, paneHeight, _ := tmux.PaneInfo(paneID)
 		return captureMsg{
 			paneID:     paneID,
 			content:    content,
