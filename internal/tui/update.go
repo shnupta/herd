@@ -28,7 +28,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 			m.ready = true
 		}
-		cmds = append(cmds, m.resizePaneCmd())
 
 	// ── Initial session discovery ──────────────────────────────────────────
 	case sessionsDiscoveredMsg:
@@ -113,14 +112,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected > 0 {
 				m.selected--
 				m.lastCapture = ""
-				cmds = append(cmds, m.resizePaneCmd())
 			}
 
 		case key.Matches(msg, keys.Down):
 			if m.selected < len(m.sessions)-1 {
 				m.selected++
 				m.lastCapture = ""
-				cmds = append(cmds, m.resizePaneCmd())
 			}
 
 		case key.Matches(msg, keys.Jump):
@@ -152,7 +149,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selected = maxInt(0, len(m.sessions)-1)
 					}
 					m.lastCapture = ""
-					cmds = append(cmds, m.resizePaneCmd())
 				}
 			}
 
@@ -176,7 +172,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selected != idx {
 						m.selected = idx
 						m.lastCapture = ""
-						cmds = append(cmds, m.resizePaneCmd())
 					}
 				}
 			}
@@ -407,24 +402,4 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// resizePaneCmd returns a Cmd that resizes the selected Claude pane to match
-// the viewport width, then immediately fetches a fresh capture so the viewport
-// reflects the new line width without waiting for the next poll tick.
-func (m Model) resizePaneCmd() tea.Cmd {
-	sel := m.selectedSession()
-	if sel == nil || m.viewport.Width <= 0 {
-		return nil
-	}
-	paneID := sel.TmuxPane
-	width := m.viewport.Width
-	return func() tea.Msg {
-		_ = tmux.ResizePane(paneID, width)
-		content, err := tmux.CapturePane(paneID, 2000)
-		if err != nil {
-			return nil
-		}
-		return captureMsg{paneID: paneID, content: content}
-	}
 }

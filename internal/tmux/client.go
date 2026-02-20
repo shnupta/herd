@@ -135,6 +135,14 @@ func ResizePane(paneID string, width int) error {
 	return nil
 }
 
+// ResizeWindow sets explicit width and height on the window containing the pane.
+func ResizeWindow(paneID string, width, height int) error {
+	if err := exec.Command("tmux", "resize-window", "-t", paneID, "-x", strconv.Itoa(width), "-y", strconv.Itoa(height)).Run(); err != nil {
+		return fmt.Errorf("tmux resize-window: %w", err)
+	}
+	return nil
+}
+
 // ResizePaneAuto removes any explicit size override on the window containing
 // the pane, letting tmux fit it to the attached client naturally.
 func ResizePaneAuto(paneID string) error {
@@ -147,8 +155,14 @@ func ResizePaneAuto(paneID string) error {
 // SwitchToPane focuses the tmux client on the given pane, restoring its natural
 // size first so it fills the terminal properly.
 func SwitchToPane(paneID string) error {
-	// Restore natural sizing before the client switches to the window.
-	_ = ResizePaneAuto(paneID)
+	// Get current client dimensions and resize the target window to match.
+	// This ensures the window fills the terminal properly even if it was
+	// previously resized to a smaller size.
+	clientWidth, wErr := ClientWidth()
+	clientHeight, hErr := ClientHeight()
+	if wErr == nil && hErr == nil && clientWidth > 0 && clientHeight > 0 {
+		_ = ResizeWindow(paneID, clientWidth, clientHeight)
+	}
 
 	// select-window makes the window containing the pane active in its session.
 	if err := exec.Command("tmux", "select-window", "-t", paneID).Run(); err != nil {
@@ -212,4 +226,30 @@ func PaneWidth(paneID string) (int, error) {
 		return 0, err
 	}
 	return w, nil
+}
+
+// ClientWidth returns the width of the current tmux client.
+func ClientWidth() (int, error) {
+	out, err := exec.Command("tmux", "display-message", "-p", "#{client_width}").Output()
+	if err != nil {
+		return 0, err
+	}
+	w, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, err
+	}
+	return w, nil
+}
+
+// ClientHeight returns the height of the current tmux client.
+func ClientHeight() (int, error) {
+	out, err := exec.Command("tmux", "display-message", "-p", "#{client_height}").Output()
+	if err != nil {
+		return 0, err
+	}
+	h, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, err
+	}
+	return h, nil
 }
