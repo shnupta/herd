@@ -23,6 +23,32 @@ type Pane struct {
 
 const listFormat = "#{pane_id}\t#{session_id}\t#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_pid}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_width}\t#{pane_height}"
 
+// parsePaneLine parses a single tab-separated line from tmux list-panes output.
+// Returns the Pane and true on success, or zero Pane and false if the line is malformed.
+func parsePaneLine(line string) (Pane, bool) {
+	f := strings.Split(line, "\t")
+	if len(f) < 10 {
+		return Pane{}, false
+	}
+	pid, _ := strconv.Atoi(f[5])
+	wIdx, _ := strconv.Atoi(f[3])
+	pIdx, _ := strconv.Atoi(f[4])
+	w, _ := strconv.Atoi(f[8])
+	h, _ := strconv.Atoi(f[9])
+	return Pane{
+		ID:          f[0],
+		SessionID:   f[1],
+		SessionName: f[2],
+		WindowIndex: wIdx,
+		PaneIndex:   pIdx,
+		PID:         pid,
+		CurrentCmd:  f[6],
+		CurrentPath: f[7],
+		Width:       w,
+		Height:      h,
+	}, true
+}
+
 // ListPanes returns all panes across all tmux sessions.
 func ListPanes() ([]Pane, error) {
 	out, err := exec.Command("tmux", "list-panes", "-a", "-F", listFormat).Output()
@@ -35,27 +61,9 @@ func ListPanes() ([]Pane, error) {
 		if line == "" {
 			continue
 		}
-		f := strings.Split(line, "\t")
-		if len(f) < 10 {
-			continue
+		if p, ok := parsePaneLine(line); ok {
+			panes = append(panes, p)
 		}
-		pid, _ := strconv.Atoi(f[5])
-		wIdx, _ := strconv.Atoi(f[3])
-		pIdx, _ := strconv.Atoi(f[4])
-		w, _ := strconv.Atoi(f[8])
-		h, _ := strconv.Atoi(f[9])
-		panes = append(panes, Pane{
-			ID:          f[0],
-			SessionID:   f[1],
-			SessionName: f[2],
-			WindowIndex: wIdx,
-			PaneIndex:   pIdx,
-			PID:         pid,
-			CurrentCmd:  f[6],
-			CurrentPath: f[7],
-			Width:       w,
-			Height:      h,
-		})
 	}
 	return panes, nil
 }
@@ -89,8 +97,8 @@ func isVersionString(s string) bool {
 func CapturePane(paneID string, scrollbackLines int) (string, error) {
 	out, err := exec.Command(
 		"tmux", "capture-pane",
-		"-p",                                    // print to stdout
-		"-e",                                    // preserve SGR escape codes
+		"-p",                                      // print to stdout
+		"-e",                                      // preserve SGR escape codes
 		"-t", paneID,
 		"-S", fmt.Sprintf("-%d", scrollbackLines), // scrollback depth
 	).Output()

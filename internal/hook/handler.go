@@ -3,6 +3,7 @@ package hook
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -11,17 +12,22 @@ import (
 
 // hookInput is the JSON Claude Code sends to hook commands via stdin.
 type hookInput struct {
-	SessionID   string          `json:"session_id"`
-	ToolName    string          `json:"tool_name"`
-	ToolInput   json.RawMessage `json:"tool_input"`
-	Message     string          `json:"message"` // for Notification
+	SessionID string          `json:"session_id"`
+	ToolName  string          `json:"tool_name"`
+	ToolInput json.RawMessage `json:"tool_input"`
+	Message   string          `json:"message"` // for Notification
 }
 
 // Run processes a hook event. eventType is one of:
 // "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Notification".
 func Run(eventType string) error {
+	return process(eventType, os.Stdin, state.Write)
+}
+
+// process handles hook event logic with injectable reader and write function for testability.
+func process(eventType string, r io.Reader, write func(state.SessionState) error) error {
 	var input hookInput
-	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
+	if err := json.NewDecoder(r).Decode(&input); err != nil {
 		return fmt.Errorf("decode stdin: %w", err)
 	}
 
@@ -58,7 +64,7 @@ func Run(eventType string) error {
 		s.State = "unknown"
 	}
 
-	return state.Write(s)
+	return write(s)
 }
 
 func cwd() string {

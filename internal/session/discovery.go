@@ -14,7 +14,11 @@ func Discover() ([]Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	return buildSessions(panes, gitBranch), nil
+}
 
+// buildSessions converts tmux panes to Sessions using the provided branch lookup function.
+func buildSessions(panes []tmux.Pane, branchFn func(string) string) []Session {
 	var sessions []Session
 	for _, p := range panes {
 		if !tmux.IsClaudePane(p.CurrentCmd) {
@@ -29,10 +33,10 @@ func Discover() ([]Session, error) {
 			State:       StateUnknown,
 			UpdatedAt:   time.Now(),
 		}
-		s.GitBranch = gitBranch(p.CurrentPath)
+		s.GitBranch = branchFn(p.CurrentPath)
 		sessions = append(sessions, s)
 	}
-	return sessions, nil
+	return sessions
 }
 
 // gitBranch returns the current git branch for the given directory, or empty string.
