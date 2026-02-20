@@ -30,6 +30,11 @@ func (m Model) View() string {
 		return m.pickerModel.View()
 	}
 
+	// If in rename mode, show the rename overlay
+	if m.renameMode {
+		return m.renderRenameOverlay()
+	}
+
 	header := m.renderHeader()
 	outputHeader := m.renderOutputHeader()
 
@@ -191,9 +196,12 @@ func (m Model) renderSessionList() string {
 
 func (m Model) renderSessionItem(i int, s session.Session) string {
 	icon := stateIcon(s.State.String())
-	name := filepath.Base(s.ProjectPath)
-	if name == "." || name == "" {
-		name = s.TmuxPane
+	name := m.namesStore.Get(s.Key())
+	if name == "" {
+		name = filepath.Base(s.ProjectPath)
+		if name == "." || name == "" {
+			name = s.TmuxPane
+		}
 	}
 
 	// Add pin indicator
@@ -247,6 +255,27 @@ func sessionMeta(s session.Session) string {
 }
 
 
+func (m Model) renderRenameOverlay() string {
+	titleStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("#7C3AED")).
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Bold(true).
+		Padding(0, 1)
+	inputStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7C3AED")).
+		Padding(0, 1)
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6B7280")).
+		PaddingLeft(1)
+
+	var sb strings.Builder
+	sb.WriteString(titleStyle.Width(m.width).Render("Rename Session") + "\n\n")
+	sb.WriteString(inputStyle.Render(m.renameInput.View()) + "\n\n")
+	sb.WriteString(helpStyle.Render("[enter] save  [esc] cancel  (empty to clear name)"))
+	return sb.String()
+}
+
 func (m Model) renderHelp() string {
 	if m.insertMode {
 		return styleHelpInsert.Width(m.width).Render("INSERT  [ctrl+h] exit")
@@ -258,6 +287,7 @@ func (m Model) renderHelp() string {
 		"[j/k] nav",
 		"[J/K] move",
 		"[p] pin",
+		"[e] rename",
 		"[/] filter",
 		"[i] insert",
 		"[t] jump",

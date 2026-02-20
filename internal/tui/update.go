@@ -130,6 +130,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// If in rename mode, handle rename input
+	if m.renameMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				m.renameMode = false
+				m.renameInput.Reset()
+				m.renameKey = ""
+				return m, nil
+			case "enter":
+				label := strings.TrimSpace(m.renameInput.Value())
+				if label == "" {
+					_ = m.namesStore.Delete(m.renameKey)
+				} else {
+					_ = m.namesStore.Set(m.renameKey, label)
+				}
+				m.renameMode = false
+				m.renameInput.Reset()
+				m.renameKey = ""
+				return m, nil
+			}
+		}
+
+		var cmd tea.Cmd
+		m.renameInput, cmd = m.renameInput.Update(msg)
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 
 	// ── Terminal resize ────────────────────────────────────────────────────
@@ -393,6 +422,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Enter filter mode
 			m.filterMode = true
 			m.filterInput.Focus()
+
+		case key.Matches(msg, keys.Rename):
+			// Open rename overlay for the selected session
+			if sel := m.selectedSession(); sel != nil {
+				m.renameKey = sel.Key()
+				m.renameInput.SetValue(m.namesStore.Get(m.renameKey))
+				m.renameInput.Focus()
+				m.renameMode = true
+			}
 
 		case key.Matches(msg, keys.Pin):
 			// Toggle pin on selected session (keyed by session key for uniqueness)
