@@ -64,10 +64,10 @@ type Model struct {
 	// Pending selection after new session creation
 	pendingSelectPane string // pane ID to select after next session discovery
 
-	// Pinning and ordering (keyed by project path for persistence)
-	pinned       map[string]int // projectPath -> pin order (lower = pinned earlier)
+	// Pinning and ordering (keyed by session key: "session:<id>" or "pane:<id>")
+	pinned       map[string]int // sessionKey -> pin order (lower = pinned earlier)
 	pinCounter   int            // increments on each pin to assign order
-	savedOrder   []string       // persisted order of project paths
+	savedOrder   []string       // persisted order of session keys
 	sidebarDirty bool           // true if sidebar state needs saving
 
 	// State
@@ -189,14 +189,14 @@ func (m *Model) sortSessions() {
 
 	// Build order index from saved order
 	orderIndex := make(map[string]int)
-	for i, path := range m.savedOrder {
-		orderIndex[path] = i
+	for i, key := range m.savedOrder {
+		orderIndex[key] = i
 	}
 
 	// Separate pinned and unpinned sessions
 	var pinned, unpinned []session.Session
 	for _, s := range m.sessions {
-		if _, ok := m.pinned[s.ProjectPath]; ok {
+		if _, ok := m.pinned[s.Key()]; ok {
 			pinned = append(pinned, s)
 		} else {
 			unpinned = append(unpinned, s)
@@ -206,17 +206,17 @@ func (m *Model) sortSessions() {
 	// Sort pinned sessions by their pin order
 	for i := 0; i < len(pinned)-1; i++ {
 		for j := i + 1; j < len(pinned); j++ {
-			if m.pinned[pinned[i].ProjectPath] > m.pinned[pinned[j].ProjectPath] {
+			if m.pinned[pinned[i].Key()] > m.pinned[pinned[j].Key()] {
 				pinned[i], pinned[j] = pinned[j], pinned[i]
 			}
 		}
 	}
 
-	// Sort unpinned sessions by saved order (unknown paths go to end)
+	// Sort unpinned sessions by saved order (unknown keys go to end)
 	for i := 0; i < len(unpinned)-1; i++ {
 		for j := i + 1; j < len(unpinned); j++ {
-			iOrder, iOk := orderIndex[unpinned[i].ProjectPath]
-			jOrder, jOk := orderIndex[unpinned[j].ProjectPath]
+			iOrder, iOk := orderIndex[unpinned[i].Key()]
+			jOrder, jOk := orderIndex[unpinned[j].Key()]
 			// If both have saved order, sort by it
 			// If only one has saved order, it comes first
 			// If neither has saved order, keep original order
@@ -244,12 +244,10 @@ func (m *Model) sortSessions() {
 
 // saveSidebarState persists the current pin and order state.
 func (m *Model) saveSidebarState() {
-	// Build order from current session list
+	// Build order from current session list using session keys
 	order := make([]string, 0, len(m.sessions))
 	for _, s := range m.sessions {
-		if s.ProjectPath != "" {
-			order = append(order, s.ProjectPath)
-		}
+		order = append(order, s.Key())
 	}
 	m.savedOrder = order
 
@@ -261,29 +259,27 @@ func (m *Model) saveSidebarState() {
 	m.sidebarDirty = false
 }
 
-// cleanupSidebarState removes entries for projects no longer active.
+// cleanupSidebarState removes entries for sessions no longer active.
 func (m *Model) cleanupSidebarState() {
-	activeProjects := make(map[string]bool)
+	activeKeys := make(map[string]bool)
 	for _, s := range m.sessions {
-		if s.ProjectPath != "" {
-			activeProjects[s.ProjectPath] = true
-		}
+		activeKeys[s.Key()] = true
 	}
 
 	// Clean pinned entries
 	changed := false
-	for project := range m.pinned {
-		if !activeProjects[project] {
-			delete(m.pinned, project)
+	for key := range m.pinned {
+		if !activeKeys[key] {
+			delete(m.pinned, key)
 			changed = true
 		}
 	}
 
 	// Clean saved order
 	var newOrder []string
-	for _, project := range m.savedOrder {
-		if activeProjects[project] {
-			newOrder = append(newOrder, project)
+	for _, key := range m.savedOrder {
+		if activeKeys[key] {
+			newOrder = append(newOrder, key)
 		} else {
 			changed = true
 		}
