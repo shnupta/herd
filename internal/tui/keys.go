@@ -14,6 +14,7 @@ type keyMap struct {
 	Quit     key.Binding
 	Install  key.Binding
 	Review   key.Binding
+	Filter   key.Binding
 }
 
 var keys = keyMap{
@@ -56,6 +57,10 @@ var keys = keyMap{
 	Review: key.NewBinding(
 		key.WithKeys("d"),
 		key.WithHelp("d", "diff review"),
+	),
+	Filter: key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "filter"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),

@@ -99,15 +99,44 @@ func (m Model) renderOutputHeader() string {
 }
 
 func (m Model) renderSessionList() string {
-	if len(m.sessions) == 0 {
-		return styleSessionMeta.Render("no claude sessions\nfound in tmux")
+	var sb strings.Builder
+
+	// Show filter input if in filter mode or filter is active
+	if m.filterMode || m.isFiltered() {
+		filterStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F59E0B")).
+			PaddingLeft(1)
+		if m.filterMode {
+			sb.WriteString(filterStyle.Render("/" + m.filterInput.Value() + "▎") + "\n")
+		} else {
+			sb.WriteString(filterStyle.Render("/" + m.filterQuery) + "\n")
+		}
 	}
 
-	var rows []string
-	for i, s := range m.sessions {
-		rows = append(rows, m.renderSessionItem(i, s))
+	sessions := m.filteredSessions()
+	if len(sessions) == 0 {
+		if m.isFiltered() {
+			sb.WriteString(styleSessionMeta.Render("no matches"))
+		} else {
+			sb.WriteString(styleSessionMeta.Render("no claude sessions\nfound in tmux"))
+		}
+		return sb.String()
 	}
-	return strings.Join(rows, "\n")
+
+	// Get the actual indices for selected highlighting
+	indices := m.filtered
+	if indices == nil {
+		indices = make([]int, len(m.sessions))
+		for i := range m.sessions {
+			indices[i] = i
+		}
+	}
+
+	for i, s := range sessions {
+		actualIdx := indices[i]
+		sb.WriteString(m.renderSessionItem(actualIdx, s) + "\n")
+	}
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 func (m Model) renderSessionItem(i int, s session.Session) string {
@@ -166,16 +195,18 @@ func (m Model) renderHelp() string {
 	if m.insertMode {
 		return styleHelpInsert.Width(m.width).Render("INSERT  [ctrl+h] exit")
 	}
+	if m.filterMode {
+		return styleHelpInsert.Width(m.width).Render("FILTER  [enter] apply  [esc] clear")
+	}
 	parts := []string{
 		"[j/k] navigate",
+		"[/] filter",
 		"[i] insert",
 		"[t] jump",
 		"[d] diff review",
 		"[x] kill",
 		"[n] new",
-		"[w] worktrees",
 		"[r] refresh",
-		"[I] install hooks",
 	}
 	return styleHelp.Width(m.width).Render(strings.Join(parts, "  "))
 }

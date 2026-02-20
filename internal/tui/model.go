@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -45,6 +46,12 @@ type Model struct {
 	// Input
 	insertMode bool // true when keystrokes are forwarded to the selected pane
 
+	// Filter mode
+	filterMode   bool               // true when filtering session list
+	filterInput  textinput.Model    // text input for filter
+	filterQuery  string             // current filter query
+	filtered     []int              // indices of sessions that match filter
+
 	// Diff review mode
 	reviewMode  bool         // true when in diff review mode
 	reviewModel *ReviewModel // the review sub-model
@@ -66,10 +73,15 @@ func New(w *state.Watcher) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
+	fi := textinput.New()
+	fi.Placeholder = "filter..."
+	fi.CharLimit = 100
+
 	return Model{
 		spinner:      sp,
 		stateWatcher: w,
 		atBottom:     true,
+		filterInput:  fi,
 	}
 }
 

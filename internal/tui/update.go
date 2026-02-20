@@ -50,6 +50,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// If in filter mode, handle filter input
+	if m.filterMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				// Clear filter and exit filter mode
+				m.filterMode = false
+				m.filterQuery = ""
+				m.filterInput.Reset()
+				m.filtered = nil
+				return m, nil
+			case "enter":
+				// Exit filter mode but keep filter active
+				m.filterMode = false
+				m.filterInput.Blur()
+				return m, nil
+			case "backspace":
+				if m.filterInput.Value() == "" {
+					// Exit filter mode if backspacing on empty
+					m.filterMode = false
+					m.filterQuery = ""
+					m.filtered = nil
+					return m, nil
+				}
+			}
+		}
+
+		// Update filter input
+		var cmd tea.Cmd
+		m.filterInput, cmd = m.filterInput.Update(msg)
+		m.filterQuery = m.filterInput.Value()
+		m.updateFilter()
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 
 	// ── Terminal resize ────────────────────────────────────────────────────
@@ -216,6 +252,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+
+		case key.Matches(msg, keys.Filter):
+			// Enter filter mode
+			m.filterMode = true
+			m.filterInput.Focus()
 		}
 
 	// ── Mouse ──────────────────────────────────────────────────────────────
@@ -454,6 +495,62 @@ func cleanCapture(s string) string {
 		end--
 	}
 	return strings.Join(lines[:end], "\n")
+}
+
+// updateFilter filters the session list based on the current filter query.
+func (m *Model) updateFilter() {
+	if m.filterQuery == "" {
+		m.filtered = nil
+		return
+	}
+
+	query := strings.ToLower(m.filterQuery)
+	m.filtered = nil
+
+	for i, s := range m.sessions {
+		// Match against project path, git branch, pane ID, and session ID
+		searchable := strings.ToLower(s.ProjectPath + " " + s.GitBranch + " " + s.TmuxPane + " " + s.ID)
+		if strings.Contains(searchable, query) {
+			m.filtered = append(m.filtered, i)
+		}
+	}
+
+	// Adjust selection to stay within filtered results
+	if len(m.filtered) > 0 {
+		// Check if current selection is in filtered list
+		found := false
+		for _, idx := range m.filtered {
+			if idx == m.selected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			m.selected = m.filtered[0]
+		}
+	}
+}
+
+// filteredSessions returns the sessions that match the current filter.
+// If no filter is active, returns all sessions.
+func (m *Model) filteredSessions() []session.Session {
+	if m.filtered == nil || len(m.filtered) == 0 {
+		if m.filterQuery == "" {
+			return m.sessions
+		}
+		return nil
+	}
+	
+	result := make([]session.Session, len(m.filtered))
+	for i, idx := range m.filtered {
+		result[i] = m.sessions[idx]
+	}
+	return result
+}
+
+// isFiltered returns true if a filter is active.
+func (m *Model) isFiltered() bool {
+	return m.filterQuery != ""
 }
 
 func maxInt(a, b int) int {
