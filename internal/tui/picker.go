@@ -264,13 +264,13 @@ func (m PickerModel) Cancelled() bool {
 }
 
 // LaunchSession creates a new tmux window with claude in the given directory.
-func LaunchSession(projectPath string) error {
+// Returns the new pane ID on success.
+func LaunchSession(projectPath string) (string, error) {
 	sess, err := tmux.CurrentSession()
 	if err != nil {
-		return err
+		return "", err
 	}
-	_, err = tmux.NewWindow(sess, projectPath, "claude")
-	return err
+	return tmux.NewWindow(sess, projectPath, "claude")
 }
 
 func shortenPath(p string) string {
