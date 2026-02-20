@@ -21,11 +21,8 @@ type sessionRefreshMsg time.Time
 type sessionsDiscoveredMsg []session.Session
 
 type captureMsg struct {
-	paneID     string
-	content    string
-	cursorX    int // cursor column (0-indexed)
-	cursorY    int // cursor row (0-indexed from top of visible area)
-	paneHeight int // height of the pane in rows
+	paneID  string
+	content string
 }
 
 type stateUpdateMsg state.SessionState
@@ -47,8 +44,6 @@ type Model struct {
 	lastCapture       string // raw content from last capture-pane
 	atBottom          bool   // whether viewport was at the bottom before update
 	pendingGotoBottom bool   // true after a session switch; forces GotoBottom on next capture
-	cursorX           int    // cursor column in pane
-	cursorY           int    // cursor row in pane (0-indexed from top of visible area)
 
 	// Input
 	insertMode bool // true when keystrokes are forwarded to the selected pane
