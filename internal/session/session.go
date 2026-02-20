@@ -50,6 +50,15 @@ type Session struct {
 	UpdatedAt   time.Time
 }
 
+// Key returns a unique identifier for the session, suitable for pinning/ordering.
+// Uses Claude session ID if available (from hooks), otherwise falls back to pane ID.
+func (s Session) Key() string {
+	if s.ID != "" {
+		return "session:" + s.ID
+	}
+	return "pane:" + s.TmuxPane
+}
+
 // DisplayName returns a short human-readable label for the session.
 func (s Session) DisplayName() string {
 	if s.ProjectPath == "" {

@@ -289,7 +289,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = err
 				} else {
 					// Remove pin for killed session
-					delete(m.pinned, sel.ProjectPath)
+					delete(m.pinned, sel.Key())
 					m.sessions = append(m.sessions[:m.selected], m.sessions[m.selected+1:]...)
 					if m.selected >= len(m.sessions) {
 						m.selected = maxInt(0, len(m.sessions)-1)
@@ -355,13 +355,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterInput.Focus()
 
 		case key.Matches(msg, keys.Pin):
-			// Toggle pin on selected session (keyed by project path for persistence)
-			if sel := m.selectedSession(); sel != nil && sel.ProjectPath != "" {
-				if _, isPinned := m.pinned[sel.ProjectPath]; isPinned {
-					delete(m.pinned, sel.ProjectPath)
+			// Toggle pin on selected session (keyed by session key for uniqueness)
+			if sel := m.selectedSession(); sel != nil {
+				if _, isPinned := m.pinned[sel.Key()]; isPinned {
+					delete(m.pinned, sel.Key())
 				} else {
 					m.pinCounter++
-					m.pinned[sel.ProjectPath] = m.pinCounter
+					m.pinned[sel.Key()] = m.pinCounter
 				}
 				m.sortSessions()
 				m.saveSidebarState()
@@ -372,10 +372,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected > 0 {
 				m.sessions[m.selected], m.sessions[m.selected-1] = m.sessions[m.selected-1], m.sessions[m.selected]
 				// If swapping pinned sessions, swap their pin order too
-				path1, path2 := m.sessions[m.selected].ProjectPath, m.sessions[m.selected-1].ProjectPath
-				if order1, ok1 := m.pinned[path1]; ok1 {
-					if order2, ok2 := m.pinned[path2]; ok2 {
-						m.pinned[path1], m.pinned[path2] = order2, order1
+				key1, key2 := m.sessions[m.selected].Key(), m.sessions[m.selected-1].Key()
+				if order1, ok1 := m.pinned[key1]; ok1 {
+					if order2, ok2 := m.pinned[key2]; ok2 {
+						m.pinned[key1], m.pinned[key2] = order2, order1
 					}
 				}
 				m.selected--
@@ -388,10 +388,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected < len(m.sessions)-1 {
 				m.sessions[m.selected], m.sessions[m.selected+1] = m.sessions[m.selected+1], m.sessions[m.selected]
 				// If swapping pinned sessions, swap their pin order too
-				path1, path2 := m.sessions[m.selected].ProjectPath, m.sessions[m.selected+1].ProjectPath
-				if order1, ok1 := m.pinned[path1]; ok1 {
-					if order2, ok2 := m.pinned[path2]; ok2 {
-						m.pinned[path1], m.pinned[path2] = order2, order1
+				key1, key2 := m.sessions[m.selected].Key(), m.sessions[m.selected+1].Key()
+				if order1, ok1 := m.pinned[key1]; ok1 {
+					if order2, ok2 := m.pinned[key2]; ok2 {
+						m.pinned[key1], m.pinned[key2] = order2, order1
 					}
 				}
 				m.selected++
