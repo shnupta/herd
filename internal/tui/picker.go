@@ -270,7 +270,15 @@ func LaunchSession(projectPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return tmux.NewWindow(sess, projectPath, "claude")
+
+	// Build claude command with config options
+	cmd := "claude"
+	cfg := config.Load()
+	if cfg.DangerouslySkipPermissions {
+		cmd = "claude --dangerously-skip-permissions"
+	}
+
+	return tmux.NewWindow(sess, projectPath, cmd)
 }
 
 func shortenPath(p string) string {

@@ -70,7 +70,8 @@ Create `~/.herd/config.json`:
     "~/code",
     "~/work",
     "~/projects"
-  ]
+  ],
+  "dangerously_skip_permissions": true
 }
 ```
 
@@ -79,6 +80,7 @@ Create `~/.herd/config.json`:
 | Field | Description | Default |
 |-------|-------------|---------|
 | `project_dirs` | Directories to scan for projects in the new session picker | `["~"]` |
+| `dangerously_skip_permissions` | Launch Claude with `--dangerously-skip-permissions` flag | `false` |
 
 ## How It Works
 
