@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/shnupta/herd/internal/config"
 	"github.com/shnupta/herd/internal/tmux"
 )
 
@@ -88,16 +89,9 @@ func NewPickerModel(existingPaths []string) PickerModel {
 		}
 	}
 
-	// Add home directory common project locations
-	home, _ := os.UserHomeDir()
-	commonDirs := []string{
-		filepath.Join(home, "projects"),
-		filepath.Join(home, "code"),
-		filepath.Join(home, "dev"),
-		filepath.Join(home, "src"),
-		filepath.Join(home, "work"),
-	}
-	for _, dir := range commonDirs {
+	// Load config and scan configured project directories
+	cfg := config.Load()
+	for _, dir := range cfg.GetProjectDirs() {
 		if entries, err := os.ReadDir(dir); err == nil {
 			for _, e := range entries {
 				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
