@@ -70,7 +70,52 @@ func (m Model) renderHeader() string {
 			title += "  [" + sel.GitBranch + "]"
 		}
 	}
+
+	// Add aggregate stats
+	stats := m.aggregateStats()
+	if stats != "" {
+		title += "  ·  " + stats
+	}
+
 	return styleHeader.Width(m.width).Render(title)
+}
+
+// aggregateStats returns a summary of session states.
+func (m Model) aggregateStats() string {
+	if len(m.sessions) == 0 {
+		return ""
+	}
+
+	counts := make(map[session.State]int)
+	for _, s := range m.sessions {
+		counts[s.State]++
+	}
+
+	var parts []string
+
+	// Order matters for readability
+	if n := counts[session.StateWorking]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d working", n))
+	}
+	if n := counts[session.StateWaiting]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d waiting", n))
+	}
+	if n := counts[session.StatePlanReady]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d plan", n))
+	}
+	if n := counts[session.StateNotifying]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d notify", n))
+	}
+	if n := counts[session.StateIdle]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d idle", n))
+	}
+
+	// If all are unknown/untracked, just show total
+	if len(parts) == 0 {
+		return fmt.Sprintf("%d sessions", len(m.sessions))
+	}
+
+	return strings.Join(parts, "  ")
 }
 
 func (m Model) renderOutputHeader() string {
