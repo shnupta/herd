@@ -155,7 +155,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			merged = append(merged, s)
 		}
 		m.sessions = merged
-		// Sort sessions with pinned at top
+		// Cleanup stale entries from sidebar state
+		m.cleanupSidebarState()
+		if m.sidebarDirty {
+			m.saveSidebarState()
+		}
+		// Sort sessions with pinned at top and apply saved order
 		m.sortSessions()
 		if m.selected >= len(m.sessions) {
 			m.selected = maxInt(0, len(m.sessions)-1)
@@ -267,11 +272,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := tmux.KillPane(sel.TmuxPane); err != nil {
 					m.err = err
 				} else {
+					// Remove pin for killed session
+					delete(m.pinned, sel.ProjectPath)
 					m.sessions = append(m.sessions[:m.selected], m.sessions[m.selected+1:]...)
 					if m.selected >= len(m.sessions) {
 						m.selected = maxInt(0, len(m.sessions)-1)
 					}
 					m.lastCapture = ""
+					// Cleanup and save sidebar state
+					m.cleanupSidebarState()
+					m.saveSidebarState()
 				}
 			}
 
@@ -329,15 +339,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterInput.Focus()
 
 		case key.Matches(msg, keys.Pin):
-			// Toggle pin on selected session
-			if sel := m.selectedSession(); sel != nil {
-				if _, isPinned := m.pinned[sel.TmuxPane]; isPinned {
-					delete(m.pinned, sel.TmuxPane)
+			// Toggle pin on selected session (keyed by project path for persistence)
+			if sel := m.selectedSession(); sel != nil && sel.ProjectPath != "" {
+				if _, isPinned := m.pinned[sel.ProjectPath]; isPinned {
+					delete(m.pinned, sel.ProjectPath)
 				} else {
 					m.pinCounter++
-					m.pinned[sel.TmuxPane] = m.pinCounter
+					m.pinned[sel.ProjectPath] = m.pinCounter
 				}
 				m.sortSessions()
+				m.saveSidebarState()
 			}
 
 		case key.Matches(msg, keys.MoveUp):
@@ -345,14 +356,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected > 0 {
 				m.sessions[m.selected], m.sessions[m.selected-1] = m.sessions[m.selected-1], m.sessions[m.selected]
 				// If swapping pinned sessions, swap their pin order too
-				pane1, pane2 := m.sessions[m.selected].TmuxPane, m.sessions[m.selected-1].TmuxPane
-				if order1, ok1 := m.pinned[pane1]; ok1 {
-					if order2, ok2 := m.pinned[pane2]; ok2 {
-						m.pinned[pane1], m.pinned[pane2] = order2, order1
+				path1, path2 := m.sessions[m.selected].ProjectPath, m.sessions[m.selected-1].ProjectPath
+				if order1, ok1 := m.pinned[path1]; ok1 {
+					if order2, ok2 := m.pinned[path2]; ok2 {
+						m.pinned[path1], m.pinned[path2] = order2, order1
 					}
 				}
 				m.selected--
 				m.lastCapture = ""
+				m.saveSidebarState()
 			}
 
 		case key.Matches(msg, keys.MoveDown):
@@ -360,14 +372,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected < len(m.sessions)-1 {
 				m.sessions[m.selected], m.sessions[m.selected+1] = m.sessions[m.selected+1], m.sessions[m.selected]
 				// If swapping pinned sessions, swap their pin order too
-				pane1, pane2 := m.sessions[m.selected].TmuxPane, m.sessions[m.selected+1].TmuxPane
-				if order1, ok1 := m.pinned[pane1]; ok1 {
-					if order2, ok2 := m.pinned[pane2]; ok2 {
-						m.pinned[pane1], m.pinned[pane2] = order2, order1
+				path1, path2 := m.sessions[m.selected].ProjectPath, m.sessions[m.selected+1].ProjectPath
+				if order1, ok1 := m.pinned[path1]; ok1 {
+					if order2, ok2 := m.pinned[path2]; ok2 {
+						m.pinned[path1], m.pinned[path2] = order2, order1
 					}
 				}
 				m.selected++
 				m.lastCapture = ""
+				m.saveSidebarState()
 			}
 		}
 

@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/shnupta/herd/internal/session"
+	"github.com/shnupta/herd/internal/sidebar"
 	"github.com/shnupta/herd/internal/state"
 )
 
@@ -63,9 +64,11 @@ type Model struct {
 	// Pending selection after new session creation
 	pendingSelectPane string // pane ID to select after next session discovery
 
-	// Pinning and ordering
-	pinned     map[string]int // paneID -> pin order (lower = pinned earlier)
-	pinCounter int            // increments on each pin to assign order
+	// Pinning and ordering (keyed by project path for persistence)
+	pinned       map[string]int // projectPath -> pin order (lower = pinned earlier)
+	pinCounter   int            // increments on each pin to assign order
+	savedOrder   []string       // persisted order of project paths
+	sidebarDirty bool           // true if sidebar state needs saving
 
 	// State
 	spinner  spinner.Model
@@ -88,12 +91,29 @@ func New(w *state.Watcher) Model {
 	fi.Placeholder = "filter..."
 	fi.CharLimit = 100
 
+	// Load persisted sidebar state
+	pinned := make(map[string]int)
+	var savedOrder []string
+	var pinCounter int
+	if sidebarState, err := sidebar.Load(); err == nil {
+		pinned = sidebarState.Pinned
+		savedOrder = sidebarState.Order
+		// Find max pin order to set counter
+		for _, order := range pinned {
+			if order > pinCounter {
+				pinCounter = order
+			}
+		}
+	}
+
 	return Model{
 		spinner:      sp,
 		stateWatcher: w,
 		atBottom:     true,
 		filterInput:  fi,
-		pinned:       make(map[string]int),
+		pinned:       pinned,
+		pinCounter:   pinCounter,
+		savedOrder:   savedOrder,
 	}
 }
 
@@ -155,7 +175,7 @@ func (m *Model) selectedSession() *session.Session {
 }
 
 // sortSessions sorts sessions with pinned sessions at the top (by pin order),
-// preserving the relative order of unpinned sessions.
+// then applies saved order for unpinned sessions.
 func (m *Model) sortSessions() {
 	if len(m.sessions) <= 1 {
 		return
@@ -167,10 +187,16 @@ func (m *Model) sortSessions() {
 		selectedPane = m.sessions[m.selected].TmuxPane
 	}
 
+	// Build order index from saved order
+	orderIndex := make(map[string]int)
+	for i, path := range m.savedOrder {
+		orderIndex[path] = i
+	}
+
 	// Separate pinned and unpinned sessions
 	var pinned, unpinned []session.Session
 	for _, s := range m.sessions {
-		if _, ok := m.pinned[s.TmuxPane]; ok {
+		if _, ok := m.pinned[s.ProjectPath]; ok {
 			pinned = append(pinned, s)
 		} else {
 			unpinned = append(unpinned, s)
@@ -180,8 +206,24 @@ func (m *Model) sortSessions() {
 	// Sort pinned sessions by their pin order
 	for i := 0; i < len(pinned)-1; i++ {
 		for j := i + 1; j < len(pinned); j++ {
-			if m.pinned[pinned[i].TmuxPane] > m.pinned[pinned[j].TmuxPane] {
+			if m.pinned[pinned[i].ProjectPath] > m.pinned[pinned[j].ProjectPath] {
 				pinned[i], pinned[j] = pinned[j], pinned[i]
+			}
+		}
+	}
+
+	// Sort unpinned sessions by saved order (unknown paths go to end)
+	for i := 0; i < len(unpinned)-1; i++ {
+		for j := i + 1; j < len(unpinned); j++ {
+			iOrder, iOk := orderIndex[unpinned[i].ProjectPath]
+			jOrder, jOk := orderIndex[unpinned[j].ProjectPath]
+			// If both have saved order, sort by it
+			// If only one has saved order, it comes first
+			// If neither has saved order, keep original order
+			if iOk && jOk && iOrder > jOrder {
+				unpinned[i], unpinned[j] = unpinned[j], unpinned[i]
+			} else if !iOk && jOk {
+				unpinned[i], unpinned[j] = unpinned[j], unpinned[i]
 			}
 		}
 	}
@@ -197,5 +239,58 @@ func (m *Model) sortSessions() {
 				break
 			}
 		}
+	}
+}
+
+// saveSidebarState persists the current pin and order state.
+func (m *Model) saveSidebarState() {
+	// Build order from current session list
+	order := make([]string, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		if s.ProjectPath != "" {
+			order = append(order, s.ProjectPath)
+		}
+	}
+	m.savedOrder = order
+
+	state := &sidebar.State{
+		Pinned: m.pinned,
+		Order:  order,
+	}
+	_ = sidebar.Save(state) // Best effort, ignore errors
+	m.sidebarDirty = false
+}
+
+// cleanupSidebarState removes entries for projects no longer active.
+func (m *Model) cleanupSidebarState() {
+	activeProjects := make(map[string]bool)
+	for _, s := range m.sessions {
+		if s.ProjectPath != "" {
+			activeProjects[s.ProjectPath] = true
+		}
+	}
+
+	// Clean pinned entries
+	changed := false
+	for project := range m.pinned {
+		if !activeProjects[project] {
+			delete(m.pinned, project)
+			changed = true
+		}
+	}
+
+	// Clean saved order
+	var newOrder []string
+	for _, project := range m.savedOrder {
+		if activeProjects[project] {
+			newOrder = append(newOrder, project)
+		} else {
+			changed = true
+		}
+	}
+	m.savedOrder = newOrder
+
+	if changed {
+		m.sidebarDirty = true
 	}
 }

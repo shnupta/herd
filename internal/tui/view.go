@@ -196,9 +196,9 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 		name = s.TmuxPane
 	}
 
-	// Add pin indicator
+	// Add pin indicator (keyed by project path for persistence)
 	pinIndicator := ""
-	if _, isPinned := m.pinned[s.TmuxPane]; isPinned {
+	if _, isPinned := m.pinned[s.ProjectPath]; isPinned {
 		pinIndicator = "📌 "
 	}
 
