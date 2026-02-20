@@ -63,11 +63,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.pickerMode = false
 			m.pickerModel = nil
-			// Refresh session list to pick up the new session
-			return m, discoverSessions()
+			m.lastCapture = "" // Force viewport refresh
+			// Refresh session list and restart capture polling
+			return m, tea.Batch(discoverSessions(), tickCapture())
 		} else if pickerModel.Cancelled() {
 			m.pickerMode = false
 			m.pickerModel = nil
+			m.lastCapture = "" // Force viewport refresh
+			// Restart capture polling
+			if sel := m.selectedSession(); sel != nil {
+				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
+			}
+			return m, tickCapture()
 		}
 
 		return m, cmd
