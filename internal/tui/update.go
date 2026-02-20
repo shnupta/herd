@@ -32,9 +32,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.reviewMode = false
 			m.reviewModel = nil
+			m.lastCapture = "" // Force viewport refresh
+			// Restart capture polling and fetch immediately
+			if sel := m.selectedSession(); sel != nil {
+				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
+			}
 		} else if reviewModel.Cancelled() {
 			m.reviewMode = false
 			m.reviewModel = nil
+			m.lastCapture = "" // Force viewport refresh
+			// Restart capture polling and fetch immediately
+			if sel := m.selectedSession(); sel != nil {
+				return m, tea.Batch(tickCapture(), fetchCapture(sel.TmuxPane))
+			}
 		}
 
 		return m, cmd
