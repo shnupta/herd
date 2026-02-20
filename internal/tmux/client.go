@@ -192,9 +192,11 @@ func KillPane(paneID string) error {
 }
 
 // NewWindow creates a new tmux window running cmd in path and returns the new pane ID.
+// The window is created detached (-d) so the client stays on the current window.
 func NewWindow(tmuxSession, path, cmd string) (string, error) {
 	out, err := exec.Command(
 		"tmux", "new-window",
+		"-d", // detached — don't switch to the new window
 		"-t", tmuxSession,
 		"-c", path,
 		"-P", "-F", "#{pane_id}",
