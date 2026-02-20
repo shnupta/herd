@@ -18,6 +18,7 @@
 - [x] `--help` CLI output
 - [x] Diff review mode (`d`) — review git diff with inline comments, submit feedback to agent
 - [x] Filter/search (`/`) — fuzzy filter session list
+- [x] Aggregate stats in header — shows count of sessions by state
 
 ## In progress / next
 
@@ -42,10 +43,6 @@ a configurable search path), select one, launch `claude` in a new tmux window.
 For the selected session's project, list git worktrees.
 Option to open an existing worktree in a new Claude session, or create a new
 worktree + session in one step.
-
-### Aggregate stats in header
-Show a compact summary in the top bar, e.g.:
-`herd  ·  myproject  [main]  ·  3 working  2 waiting`
 
 ### Zoom mode (`z`)
 Hide the session sidebar entirely so the viewport fills the terminal.
