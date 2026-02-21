@@ -398,6 +398,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					var cmd tea.Cmd
 					m, cmd = selectSession(m)
 					cmds = append(cmds, cmd)
+					m.itemsDirty = true
 					m.cleanupSidebarState()
 					m.saveSidebarState()
 				}
