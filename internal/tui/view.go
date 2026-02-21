@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/shnupta/herd/internal/names"
 	"github.com/shnupta/herd/internal/session"
 )
 
@@ -21,22 +22,22 @@ func (m Model) View() string {
 	}
 
 	// If in review mode, show the review UI
-	if m.reviewMode && m.reviewModel != nil {
+	if m.mode == ModeReview && m.reviewModel != nil {
 		return m.reviewModel.View()
 	}
 
 	// If in picker mode, show the project picker
-	if m.pickerMode && m.pickerModel != nil {
+	if m.mode == ModePicker && m.pickerModel != nil {
 		return m.pickerModel.View()
 	}
 
 	// If in rename mode, show the rename overlay
-	if m.renameMode {
+	if m.mode == ModeRename {
 		return m.renderRenameOverlay()
 	}
 
 	// If in group-set mode, show the group overlay
-	if m.groupSetMode {
+	if m.mode == ModeGroupSet {
 		return m.renderGroupSetOverlay()
 	}
 
@@ -172,11 +173,11 @@ func (m Model) renderSessionList() string {
 
 	// Show filter input if in filter mode or filter is active.
 	// When filtering, fall back to a flat (ungrouped) list for simplicity.
-	if m.filterMode || m.isFiltered() {
+	if m.mode == ModeFilter || m.isFiltered() {
 		filterStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F59E0B")).
 			PaddingLeft(1)
-		if m.filterMode {
+		if m.mode == ModeFilter {
 			sb.WriteString(filterStyle.Render("/" + m.filterInput.Value() + "▎") + "\n")
 		} else {
 			sb.WriteString(filterStyle.Render("/" + m.filterQuery) + "\n")
@@ -222,7 +223,7 @@ func (m Model) renderSessionList() string {
 
 func (m Model) renderSessionItem(i int, s session.Session) string {
 	icon := stateIcon(s.State.String())
-	name := m.namesStore.Get(s.Key())
+	name := names.Get(s.Key())
 	if name == "" {
 		name = filepath.Base(s.ProjectPath)
 		if name == "." || name == "" {
@@ -370,7 +371,7 @@ func (m Model) renderHelp() string {
 	if m.insertMode {
 		return styleHelpInsert.Width(m.width).Render("INSERT  [ctrl+h] exit")
 	}
-	if m.filterMode {
+	if m.mode == ModeFilter {
 		return styleHelpInsert.Width(m.width).Render("FILTER  [enter] apply  [esc] clear")
 	}
 	parts := []string{

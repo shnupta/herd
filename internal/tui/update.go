@@ -10,179 +10,195 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/shnupta/herd/internal/diff"
+	"github.com/shnupta/herd/internal/groups"
 	"github.com/shnupta/herd/internal/hook"
+	"github.com/shnupta/herd/internal/names"
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/state"
 	"github.com/shnupta/herd/internal/tmux"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
-	// If in review mode, delegate only relevant messages to review model
-	// Other messages (ticks, refresh, etc.) continue to main handler
-	if m.reviewMode && m.reviewModel != nil {
+	switch m.mode {
+	case ModeReview:
+		// Review mode only intercepts key/window/mouse messages;
+		// other messages (ticks, refresh, etc.) fall through to the main handler.
 		switch msg.(type) {
 		case tea.KeyMsg, tea.WindowSizeMsg, tea.MouseMsg:
-			updated, cmd := m.reviewModel.Update(msg)
-			reviewModel := updated.(ReviewModel)
-			m.reviewModel = &reviewModel
-
-			if reviewModel.Submitted() {
-				// Send feedback to the agent via stdin
-				if sel := m.selectedSession(); sel != nil && reviewModel.FeedbackText() != "" {
-					_ = tmux.SendKeys(sel.TmuxPane, reviewModel.FeedbackText())
-				}
-				m.reviewMode = false
-				m.reviewModel = nil
-				m.lastCapture = "" // Force viewport refresh
-				// Restart all polling loops
-				if sel := m.selectedSession(); sel != nil {
-					return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
-				}
-				return m, tea.Batch(tickCapture(), tickSessionRefresh())
-			} else if reviewModel.Cancelled() {
-				m.reviewMode = false
-				m.reviewModel = nil
-				m.lastCapture = "" // Force viewport refresh
-				// Restart all polling loops
-				if sel := m.selectedSession(); sel != nil {
-					return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
-				}
-				return m, tea.Batch(tickCapture(), tickSessionRefresh())
-			}
-
-			return m, cmd
+			return m.updateReviewMode(msg)
 		}
-		// Other messages fall through to main handler
-	}
-
-	// If in picker mode, delegate only relevant messages to picker model
-	// Other messages (ticks, refresh, etc.) continue to main handler
-	if m.pickerMode && m.pickerModel != nil {
+	case ModePicker:
+		// Picker mode only intercepts key/window messages;
+		// other messages fall through to the main handler.
 		switch msg.(type) {
 		case tea.KeyMsg, tea.WindowSizeMsg:
-			updated, cmd := m.pickerModel.Update(msg)
-			pickerModel := updated.(PickerModel)
-			m.pickerModel = &pickerModel
-
-			if pickerModel.ChosenPath() != "" {
-				// Launch new session and remember the pane ID for selection
-				if paneID, err := LaunchSession(pickerModel.ChosenPath()); err != nil {
-					m.err = err
-				} else {
-					m.pendingSelectPane = paneID
-					m.pendingQuickRetried = false
-				}
-				m.pickerMode = false
-				m.pickerModel = nil
-				m.lastCapture = "" // Force viewport refresh
-				// Refresh session list and restart capture polling
-				return m, tea.Batch(discoverSessions(), tickCapture(), tickSessionRefresh())
-			} else if pickerModel.Cancelled() {
-				m.pickerMode = false
-				m.pickerModel = nil
-				m.lastCapture = "" // Force viewport refresh
-				// Restart capture polling
-				if sel := m.selectedSession(); sel != nil {
-					return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
-				}
-				return m, tea.Batch(tickCapture(), tickSessionRefresh())
-			}
-
-			return m, cmd
+			return m.updatePickerMode(msg)
 		}
-		// Other messages fall through to main handler
+	case ModeFilter:
+		return m.updateFilterMode(msg)
+	case ModeRename:
+		return m.updateRenameMode(msg)
+	case ModeGroupSet:
+		return m.updateGroupSetMode(msg)
 	}
 
-	// If in filter mode, handle filter input
-	if m.filterMode {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "esc":
-				// Clear filter and exit filter mode
-				m.filterMode = false
+	return m.updateNormal(msg)
+}
+
+// ── Per-mode update handlers ───────────────────────────────────────────────
+
+func (m Model) updateReviewMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.reviewModel == nil {
+		return m.updateNormal(msg)
+	}
+
+	updated, cmd := m.reviewModel.Update(msg)
+	reviewModel := updated.(ReviewModel)
+	m.reviewModel = &reviewModel
+
+	if reviewModel.Submitted() {
+		if sel := m.selectedSession(); sel != nil && reviewModel.FeedbackText() != "" {
+			_ = tmux.SendKeys(sel.TmuxPane, reviewModel.FeedbackText())
+		}
+		m.mode = ModeNormal
+		m.reviewModel = nil
+		m.lastCapture = ""
+		if sel := m.selectedSession(); sel != nil {
+			return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+		}
+		return m, tea.Batch(tickCapture(), tickSessionRefresh())
+	} else if reviewModel.Cancelled() {
+		m.mode = ModeNormal
+		m.reviewModel = nil
+		m.lastCapture = ""
+		if sel := m.selectedSession(); sel != nil {
+			return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+		}
+		return m, tea.Batch(tickCapture(), tickSessionRefresh())
+	}
+
+	return m, cmd
+}
+
+func (m Model) updatePickerMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.pickerModel == nil {
+		return m.updateNormal(msg)
+	}
+
+	updated, cmd := m.pickerModel.Update(msg)
+	pickerModel := updated.(PickerModel)
+	m.pickerModel = &pickerModel
+
+	if pickerModel.ChosenPath() != "" {
+		if paneID, err := LaunchSession(pickerModel.ChosenPath()); err != nil {
+			m.err = err
+		} else {
+			m.pendingSelectPane = paneID
+			m.pendingQuickRetried = false
+		}
+		m.mode = ModeNormal
+		m.pickerModel = nil
+		m.lastCapture = ""
+		return m, tea.Batch(discoverSessions(), tickCapture(), tickSessionRefresh())
+	} else if pickerModel.Cancelled() {
+		m.mode = ModeNormal
+		m.pickerModel = nil
+		m.lastCapture = ""
+		if sel := m.selectedSession(); sel != nil {
+			return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+		}
+		return m, tea.Batch(tickCapture(), tickSessionRefresh())
+	}
+
+	return m, cmd
+}
+
+func (m Model) updateFilterMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.mode = ModeNormal
+			m.filterQuery = ""
+			m.filterInput.Reset()
+			m.filtered = nil
+			return m, nil
+		case "enter":
+			m.mode = ModeNormal
+			m.filterInput.Blur()
+			return m, nil
+		case "backspace":
+			if m.filterInput.Value() == "" {
+				m.mode = ModeNormal
 				m.filterQuery = ""
-				m.filterInput.Reset()
 				m.filtered = nil
 				return m, nil
-			case "enter":
-				// Exit filter mode but keep filter active
-				m.filterMode = false
-				m.filterInput.Blur()
-				return m, nil
-			case "backspace":
-				if m.filterInput.Value() == "" {
-					// Exit filter mode if backspacing on empty
-					m.filterMode = false
-					m.filterQuery = ""
-					m.filtered = nil
-					return m, nil
-				}
 			}
 		}
-
-		// Update filter input
-		var cmd tea.Cmd
-		m.filterInput, cmd = m.filterInput.Update(msg)
-		m.filterQuery = m.filterInput.Value()
-		m.updateFilter()
-		return m, cmd
 	}
 
-	// If in group-set mode, handle group name input
-	if m.groupSetMode {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "esc":
-				m.groupSetMode = false
-				m.groupSetInput.Reset()
-				m.groupSetKey = ""
-				return m, nil
-			case "enter":
-				groupName := strings.TrimSpace(m.groupSetInput.Value())
-				_ = m.groupsStore.Set(m.groupSetKey, groupName)
-				m.groupSetMode = false
-				m.groupSetInput.Reset()
-				m.groupSetKey = ""
-				return m, nil
+	var cmd tea.Cmd
+	m.filterInput, cmd = m.filterInput.Update(msg)
+	m.filterQuery = m.filterInput.Value()
+	m.updateFilter()
+	return m, cmd
+}
+
+func (m Model) updateRenameMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.mode = ModeNormal
+			m.renameInput.Reset()
+			m.renameKey = ""
+			return m, nil
+		case "enter":
+			label := strings.TrimSpace(m.renameInput.Value())
+			if label == "" {
+				_ = names.Delete(m.renameKey)
+			} else {
+				_ = names.Set(m.renameKey, label)
 			}
+			m.mode = ModeNormal
+			m.renameInput.Reset()
+			m.renameKey = ""
+			return m, nil
 		}
-		var cmd tea.Cmd
-		m.groupSetInput, cmd = m.groupSetInput.Update(msg)
-		return m, cmd
 	}
 
-	// If in rename mode, handle rename input
-	if m.renameMode {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "esc":
-				m.renameMode = false
-				m.renameInput.Reset()
-				m.renameKey = ""
-				return m, nil
-			case "enter":
-				label := strings.TrimSpace(m.renameInput.Value())
-				if label == "" {
-					_ = m.namesStore.Delete(m.renameKey)
-				} else {
-					_ = m.namesStore.Set(m.renameKey, label)
-				}
-				m.renameMode = false
-				m.renameInput.Reset()
-				m.renameKey = ""
-				return m, nil
-			}
-		}
+	var cmd tea.Cmd
+	m.renameInput, cmd = m.renameInput.Update(msg)
+	return m, cmd
+}
 
-		var cmd tea.Cmd
-		m.renameInput, cmd = m.renameInput.Update(msg)
-		return m, cmd
+func (m Model) updateGroupSetMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.mode = ModeNormal
+			m.groupSetInput.Reset()
+			m.groupSetKey = ""
+			return m, nil
+		case "enter":
+			groupName := strings.TrimSpace(m.groupSetInput.Value())
+			_ = groups.Set(m.groupSetKey, groupName)
+			m.mode = ModeNormal
+			m.groupSetInput.Reset()
+			m.groupSetKey = ""
+			return m, nil
+		}
 	}
+	var cmd tea.Cmd
+	m.groupSetInput, cmd = m.groupSetInput.Update(msg)
+	return m, cmd
+}
+
+// ── Normal mode ────────────────────────────────────────────────────────────
+
+func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 
@@ -194,15 +210,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 			m.ready = true
 		}
-		// Resize the observed pane to match the new viewport dimensions so
-		// that Claude formats its output to fit what we can display.
 		if sel := m.selectedSession(); sel != nil {
 			cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
 		}
 
 	// ── Initial session discovery ──────────────────────────────────────────
 	case sessionsDiscoveredMsg:
-		// Save selected pane BEFORE replacing sessions list
 		var selectedPane string
 		if m.selected < len(m.sessions) {
 			selectedPane = m.sessions[m.selected].TmuxPane
@@ -222,15 +235,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			merged = append(merged, s)
 		}
 		m.sessions = merged
-		// Cleanup stale entries from sidebar state
 		m.cleanupSidebarState()
 		if m.sidebarDirty {
 			m.saveSidebarState()
 		}
-		// Sort sessions with pinned at top and apply saved order
 		m.sortSessions()
 
-		// Restore selection to the previously selected pane
 		if selectedPane != "" {
 			for i, s := range m.sessions {
 				if s.TmuxPane == selectedPane {
@@ -242,23 +252,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selected >= len(m.sessions) {
 			m.selected = maxInt(0, len(m.sessions)-1)
 		}
-		// If we have a pending pane selection, find and select it.
-		// We keep trying across refreshes because the new pane may still be
-		// initializing (shell starting, claude not yet running) when the first
-		// discovery fires.
 		if m.pendingSelectPane != "" {
 			for i, s := range m.sessions {
 				if s.TmuxPane == m.pendingSelectPane {
 					m.selected = i
-					m.lastCapture = ""        // Force viewport refresh
-					m.pendingGotoBottom = true // Jump to bottom of new session
-					m.pendingSelectPane = ""   // Found — stop searching
+					m.lastCapture = ""
+					m.pendingGotoBottom = true
+					m.pendingSelectPane = ""
 					m.pendingQuickRetried = false
 					break
 				}
 			}
-			// Still waiting — fire one quick 500ms retry (Claude may still be
-			// initialising). After that, let the normal 3s timer handle it.
 			if m.pendingSelectPane != "" && !m.pendingQuickRetried {
 				m.pendingQuickRetried = true
 				cmds = append(cmds, pendingDiscoveryTick())
@@ -267,7 +271,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if states, err := state.ReadAll(); err == nil {
 			m = m.applyStates(states)
 		}
-		// Resize the newly selected pane (viewport dimensions are known once ready).
 		if m.ready {
 			if sel := m.selectedSession(); sel != nil {
 				cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
@@ -289,8 +292,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case captureMsg:
 		if sel := m.selectedSession(); sel != nil && sel.TmuxPane == msg.paneID && msg.content != m.lastCapture {
 			m.lastCapture = msg.content
-			// After a session switch, always jump to the bottom of the new session's
-			// output rather than inheriting the scroll position from the previous one.
 			if m.pendingGotoBottom {
 				m.atBottom = true
 				m.pendingGotoBottom = false
@@ -328,7 +329,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := forwardKey(sel.TmuxPane, msg); err != nil {
 					m.err = err
 				} else {
-					// Immediately re-fetch capture so typing feels responsive.
 					cmds = append(cmds, fetchCapture(sel.TmuxPane))
 				}
 			}
@@ -337,34 +337,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 		case key.Matches(msg, keys.Quit):
-			// Restore auto-sizing on all observed panes before quitting so
-			// Claude sessions return to their natural terminal dimensions.
 			for _, s := range m.sessions {
 				_ = tmux.ResizePaneAuto(s.TmuxPane)
 			}
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
-			changed := m.moveUp()
-			// Always fetch immediately so the viewport reflects the new session
-			// without waiting for the next 100ms tick.
-			if sel := m.selectedSession(); sel != nil {
-				if changed {
-					m.lastCapture = ""
-					m.pendingGotoBottom = true
-					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
-				}
+			if m.moveUp() {
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
+			} else if sel := m.selectedSession(); sel != nil {
 				cmds = append(cmds, fetchCapture(sel.TmuxPane))
 			}
 
 		case key.Matches(msg, keys.Down):
-			changed := m.moveDown()
-			if sel := m.selectedSession(); sel != nil {
-				if changed {
-					m.lastCapture = ""
-					m.pendingGotoBottom = true
-					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
-				}
+			if m.moveDown() {
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
+			} else if sel := m.selectedSession(); sel != nil {
 				cmds = append(cmds, fetchCapture(sel.TmuxPane))
 			}
 
@@ -392,22 +384,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := tmux.KillPane(sel.TmuxPane); err != nil {
 					m.err = err
 				} else {
-					// Remove pin for killed session
 					delete(m.pinned, sel.Key())
 					m.sessions = append(m.sessions[:m.selected], m.sessions[m.selected+1:]...)
 					if m.selected >= len(m.sessions) {
 						m.selected = maxInt(0, len(m.sessions)-1)
 					}
-					m.lastCapture = ""
-					m.pendingGotoBottom = true
-					// Cleanup and save sidebar state
+					var cmd tea.Cmd
+					m, cmd = selectSession(m)
+					cmds = append(cmds, cmd)
 					m.cleanupSidebarState()
 					m.saveSidebarState()
 				}
 			}
 
 		case key.Matches(msg, keys.New):
-			// Open project picker to create new session
 			var existingPaths []string
 			for _, s := range m.sessions {
 				if s.ProjectPath != "" {
@@ -415,20 +405,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			pickerModel := NewPickerModel(existingPaths)
-			// Send initial size
 			updatedModel, _ := pickerModel.Update(tea.WindowSizeMsg{
 				Width:  m.width,
 				Height: m.height,
 			})
 			pickerModel = updatedModel.(PickerModel)
 			m.pickerModel = &pickerModel
-			m.pickerMode = true
+			m.mode = ModePicker
 
 		case key.Matches(msg, keys.Worktree):
 			// TODO: worktree panel
 
 		case key.Matches(msg, keys.Review):
-			// Open diff review for the selected session's project
 			if sel := m.selectedSession(); sel != nil {
 				gitRoot, err := diff.GetGitRoot(sel.ProjectPath)
 				if err == nil {
@@ -441,50 +429,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								sessionID = sel.TmuxPane
 							}
 							reviewModel := NewReviewModel(parsed, sessionID, gitRoot)
-							// Send initial size
 							updatedModel, _ := reviewModel.Update(tea.WindowSizeMsg{
 								Width:  m.width,
 								Height: m.height,
 							})
 							reviewModel = updatedModel.(ReviewModel)
 							m.reviewModel = &reviewModel
-							m.reviewMode = true
+							m.mode = ModeReview
 						}
 					}
 				}
 			}
 
 		case key.Matches(msg, keys.Filter):
-			// Enter filter mode
-			m.filterMode = true
+			m.mode = ModeFilter
 			m.filterInput.Focus()
 
 		case key.Matches(msg, keys.Rename):
-			// Open rename overlay for the selected session
 			if sel := m.selectedSession(); sel != nil {
 				m.renameKey = sel.Key()
-				m.renameInput.SetValue(m.namesStore.Get(m.renameKey))
+				m.renameInput.SetValue(names.Get(m.renameKey))
 				m.renameInput.Focus()
-				m.renameMode = true
+				m.mode = ModeRename
 			}
 
 		case key.Matches(msg, keys.ToggleGroup):
 			m.toggleGroupAtCursor()
 
 		case key.Matches(msg, keys.SetGroup):
-			// Open group-set overlay for the selected session
 			if m.cursorOnGroup == "" {
 				if sel := m.selectedSession(); sel != nil {
 					m.groupSetKey = sel.Key()
-					current := m.groupsStore.Get(m.groupSetKey)
+					current := groups.Get(m.groupSetKey)
 					m.groupSetInput.SetValue(current)
 					m.groupSetInput.Focus()
-					m.groupSetMode = true
+					m.mode = ModeGroupSet
 				}
 			}
 
 		case key.Matches(msg, keys.Pin):
-			// Toggle pin on selected session (keyed by session key for uniqueness)
 			if sel := m.selectedSession(); sel != nil {
 				if _, isPinned := m.pinned[sel.Key()]; isPinned {
 					delete(m.pinned, sel.Key())
@@ -497,10 +480,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, keys.MoveUp):
-			// Move selected session up in the list
 			if m.selected > 0 {
 				m.sessions[m.selected], m.sessions[m.selected-1] = m.sessions[m.selected-1], m.sessions[m.selected]
-				// If swapping pinned sessions, swap their pin order too
 				key1, key2 := m.sessions[m.selected].Key(), m.sessions[m.selected-1].Key()
 				if order1, ok1 := m.pinned[key1]; ok1 {
 					if order2, ok2 := m.pinned[key2]; ok2 {
@@ -508,16 +489,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.selected--
-				m.lastCapture = ""
-				m.pendingGotoBottom = true
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
 				m.saveSidebarState()
 			}
 
 		case key.Matches(msg, keys.MoveDown):
-			// Move selected session down in the list
 			if m.selected < len(m.sessions)-1 {
 				m.sessions[m.selected], m.sessions[m.selected+1] = m.sessions[m.selected+1], m.sessions[m.selected]
-				// If swapping pinned sessions, swap their pin order too
 				key1, key2 := m.sessions[m.selected].Key(), m.sessions[m.selected+1].Key()
 				if order1, ok1 := m.pinned[key1]; ok1 {
 					if order2, ok2 := m.pinned[key2]; ok2 {
@@ -525,8 +505,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.selected++
-				m.lastCapture = ""
-				m.pendingGotoBottom = true
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
 				m.saveSidebarState()
 			}
 		}
@@ -543,11 +524,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if idx := m.sessionIndexAtY(msg.Y); idx >= 0 && idx < len(m.sessions) {
 					if m.selected != idx {
 						m.selected = idx
-						m.lastCapture = ""
-						m.pendingGotoBottom = true
-						if sel := m.selectedSession(); sel != nil {
-							cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
-						}
+						var cmd tea.Cmd
+						m, cmd = selectSession(m)
+						cmds = append(cmds, cmd)
 					}
 				}
 			}
@@ -571,97 +550,77 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── Key forwarding ─────────────────────────────────────────────────────────
 
+// tmuxKeyNames maps tea key strings to tmux send-keys names.
+var tmuxKeyNames = map[string]string{
+	"enter":     "Enter",
+	"backspace": "BSpace",
+	"delete":    "DC",
+	"tab":       "Tab",
+	"ctrl+i":    "Tab",
+	"shift+tab": "BTab",
+	"up":        "Up",
+	"down":      "Down",
+	"left":      "Left",
+	"right":     "Right",
+	"home":      "Home",
+	"end":       "End",
+	"pgup":      "PPage",
+	"pgdown":    "NPage",
+	"esc":       "Escape",
+	" ":         "Space",
+	"ctrl+a":    "C-a",
+	"ctrl+b":    "C-b",
+	"ctrl+c":    "C-c",
+	"ctrl+d":    "C-d",
+	"ctrl+e":    "C-e",
+	"ctrl+f":    "C-f",
+	"ctrl+g":    "C-g",
+	// ctrl+h is the exit-insert-mode key — intentionally absent.
+	"ctrl+j": "C-j",
+	"ctrl+k": "C-k",
+	"ctrl+l": "C-l",
+	"ctrl+m": "Enter",
+	"ctrl+n": "C-n",
+	"ctrl+o": "C-o",
+	"ctrl+p": "C-p",
+	"ctrl+q": "C-q",
+	"ctrl+r": "C-r",
+	"ctrl+s": "C-s",
+	"ctrl+t": "C-t",
+	"ctrl+u": "C-u",
+	"ctrl+v": "C-v",
+	"ctrl+w": "C-w",
+	"ctrl+x": "C-x",
+	"ctrl+y": "C-y",
+	"ctrl+z": "C-z",
+}
+
 // forwardKey sends a single key event to the given tmux pane.
 // ctrl+h is the exit-insert-mode key and is never forwarded.
 func forwardKey(paneID string, msg tea.KeyMsg) error {
-	switch msg.String() {
-	case "ctrl+h":
+	if msg.String() == "ctrl+h" {
 		return nil // exit key — handled by caller
-	case "enter":
-		return tmux.SendKeyName(paneID, "Enter")
-	case "backspace":
-		return tmux.SendKeyName(paneID, "BSpace")
-	case "delete":
-		return tmux.SendKeyName(paneID, "DC")
-	case "tab", "ctrl+i":
-		return tmux.SendKeyName(paneID, "Tab")
-	case "shift+tab":
-		return tmux.SendKeyName(paneID, "BTab")
-	case "up":
-		return tmux.SendKeyName(paneID, "Up")
-	case "down":
-		return tmux.SendKeyName(paneID, "Down")
-	case "left":
-		return tmux.SendKeyName(paneID, "Left")
-	case "right":
-		return tmux.SendKeyName(paneID, "Right")
-	case "home":
-		return tmux.SendKeyName(paneID, "Home")
-	case "end":
-		return tmux.SendKeyName(paneID, "End")
-	case "pgup":
-		return tmux.SendKeyName(paneID, "PPage")
-	case "pgdown":
-		return tmux.SendKeyName(paneID, "NPage")
-	case "esc":
-		return tmux.SendKeyName(paneID, "Escape")
-	case "ctrl+a":
-		return tmux.SendKeyName(paneID, "C-a")
-	case "ctrl+b":
-		return tmux.SendKeyName(paneID, "C-b")
-	case "ctrl+c":
-		return tmux.SendKeyName(paneID, "C-c")
-	case "ctrl+d":
-		return tmux.SendKeyName(paneID, "C-d")
-	case "ctrl+e":
-		return tmux.SendKeyName(paneID, "C-e")
-	case "ctrl+f":
-		return tmux.SendKeyName(paneID, "C-f")
-	case "ctrl+g":
-		return tmux.SendKeyName(paneID, "C-g")
-	// ctrl+h: exit key, not forwarded
-	case "ctrl+j":
-		return tmux.SendKeyName(paneID, "C-j")
-	case "ctrl+k":
-		return tmux.SendKeyName(paneID, "C-k")
-	case "ctrl+l":
-		return tmux.SendKeyName(paneID, "C-l")
-	case "ctrl+m":
-		return tmux.SendKeyName(paneID, "Enter")
-	case "ctrl+n":
-		return tmux.SendKeyName(paneID, "C-n")
-	case "ctrl+o":
-		return tmux.SendKeyName(paneID, "C-o")
-	case "ctrl+p":
-		return tmux.SendKeyName(paneID, "C-p")
-	case "ctrl+q":
-		return tmux.SendKeyName(paneID, "C-q")
-	case "ctrl+r":
-		return tmux.SendKeyName(paneID, "C-r")
-	case "ctrl+s":
-		return tmux.SendKeyName(paneID, "C-s")
-	case "ctrl+t":
-		return tmux.SendKeyName(paneID, "C-t")
-	case "ctrl+u":
-		return tmux.SendKeyName(paneID, "C-u")
-	case "ctrl+v":
-		return tmux.SendKeyName(paneID, "C-v")
-	case "ctrl+w":
-		return tmux.SendKeyName(paneID, "C-w")
-	case "ctrl+x":
-		return tmux.SendKeyName(paneID, "C-x")
-	case "ctrl+y":
-		return tmux.SendKeyName(paneID, "C-y")
-	case "ctrl+z":
-		return tmux.SendKeyName(paneID, "C-z")
 	}
-
-	// Printable runes — send literally.
-	if len(msg.Runes) > 0 {
+	if name, ok := tmuxKeyNames[msg.String()]; ok {
+		return tmux.SendKeyName(paneID, name)
+	}
+	if msg.Type == tea.KeyRunes {
 		return tmux.SendLiteral(paneID, string(msg.Runes))
 	}
-
 	return nil
+}
+
+// selectSession resets viewport state for a newly selected session and returns
+// commands to resize the observed pane and fetch its capture.
+func selectSession(m Model) (Model, tea.Cmd) {
+	m.lastCapture = ""
+	m.pendingGotoBottom = true
+	var cmds []tea.Cmd
+	if sel := m.selectedSession(); sel != nil {
+		cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+		cmds = append(cmds, fetchCapture(sel.TmuxPane))
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -811,7 +770,6 @@ func (m *Model) updateFilter() {
 
 	// Adjust selection to stay within filtered results
 	if len(m.filtered) > 0 {
-		// Check if current selection is in filtered list
 		found := false
 		for _, idx := range m.filtered {
 			if idx == m.selected {
@@ -834,7 +792,7 @@ func (m *Model) filteredSessions() []session.Session {
 		}
 		return nil
 	}
-	
+
 	result := make([]session.Session, len(m.filtered))
 	for i, idx := range m.filtered {
 		result[i] = m.sessions[idx]
@@ -853,4 +811,3 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
-

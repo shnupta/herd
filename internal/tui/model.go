@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/shnupta/herd/internal/groups"
-	"github.com/shnupta/herd/internal/names"
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/sidebar"
 	"github.com/shnupta/herd/internal/state"
@@ -63,35 +62,29 @@ type Model struct {
 	// Input
 	insertMode bool // true when keystrokes are forwarded to the selected pane
 
-	// Filter mode
-	filterMode   bool               // true when filtering session list
+	// Modal state
+	mode Mode // current input mode (ModeNormal, ModeReview, etc.)
+
+	// Filter
 	filterInput  textinput.Model    // text input for filter
 	filterQuery  string             // current filter query
 	filtered     []int              // indices of sessions that match filter
 
-	// Diff review mode
-	reviewMode  bool         // true when in diff review mode
+	// Diff review
 	reviewModel *ReviewModel // the review sub-model
 
-	// Project picker mode
-	pickerMode  bool         // true when in project picker mode
+	// Project picker
 	pickerModel *PickerModel // the picker sub-model
 
-	// Rename mode
-	renameMode  bool             // true when the rename overlay is open
+	// Rename
 	renameInput textinput.Model  // text input for the rename overlay
 	renameKey   string           // session key being renamed
 
-	// Group-set mode
-	groupSetMode  bool            // true when the group-assign overlay is open
+	// Group-set
 	groupSetInput textinput.Model // text input for the group name
 	groupSetKey   string          // session key being re-grouped
 
-	// Custom session names
-	namesStore *names.Store
-
 	// Session grouping
-	groupsStore     *groups.Store
 	teamsStore      *teams.Store    // reads ~/.claude/teams for auto-grouping
 	collapsedGroups map[string]bool // groupKey → true when collapsed
 	cursorOnGroup   string          // non-empty when cursor rests on a collapsed group header
@@ -151,16 +144,8 @@ func New(w *state.Watcher) Model {
 		}
 	}
 
-	// Load persisted session names
-	home, _ := os.UserHomeDir()
-	ns := names.NewStore(home + "/.herd/names.json")
-	_ = ns.Load()
-
-	// Load persisted custom group assignments
-	gs := groups.NewStore(home + "/.herd/groups.json")
-	_ = gs.Load()
-
 	// Load Claude Code agent team configs for auto-grouping
+	home, _ := os.UserHomeDir()
 	ts := teams.NewStore(home + "/.claude/teams")
 	_ = ts.Load()
 
@@ -174,8 +159,6 @@ func New(w *state.Watcher) Model {
 		pinned:          pinned,
 		pinCounter:      pinCounter,
 		savedOrder:      savedOrder,
-		namesStore:      ns,
-		groupsStore:     gs,
 		teamsStore:      ts,
 		collapsedGroups: make(map[string]bool),
 	}
@@ -343,7 +326,7 @@ func (m *Model) saveSidebarState() {
 //
 // Priority: explicit custom group > agent team membership > flat.
 func (m *Model) groupKeyAndName(s session.Session) (key, name string) {
-	if custom := m.groupsStore.Get(s.Key()); custom != "" {
+	if custom := groups.Get(s.Key()); custom != "" {
 		return "custom:" + custom, custom
 	}
 	if team := m.teamsStore.TeamForSession(s.TmuxPane, s.ID); team != "" {
