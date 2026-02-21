@@ -9,6 +9,7 @@ import (
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/state"
 	"github.com/shnupta/herd/internal/tmux"
+	"github.com/shnupta/herd/internal/tmux/tmuxtest"
 )
 
 // testSessions returns a slice of sessions for test fixtures.
@@ -47,9 +48,9 @@ func testSessions() []session.Session {
 func newTestModel(t *testing.T, sessions []session.Session) (Model, *state.FakeWatcher) {
 	t.Helper()
 	fw := state.NewFakeWatcher()
-	mock := &mockTmuxClient{
+	mock := &tmuxtest.MockClient{
 		// Return claude panes so any background re-discovery finds them too.
-		panes: makePanes(sessions),
+		Panes: makePanes(sessions),
 	}
 	m := New(fw, mock)
 	// Pre-seed sessions so we don't rely on async discovery timing.
