@@ -347,26 +347,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
-			changed := m.moveUp()
-			// Always fetch immediately so the viewport reflects the new session
-			// without waiting for the next 100ms tick.
-			if sel := m.selectedSession(); sel != nil {
-				if changed {
-					m.lastCapture = ""
-					m.pendingGotoBottom = true
-					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
-				}
+			if m.moveUp() {
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
+			} else if sel := m.selectedSession(); sel != nil {
 				cmds = append(cmds, fetchCapture(sel.TmuxPane))
 			}
 
 		case key.Matches(msg, keys.Down):
-			changed := m.moveDown()
-			if sel := m.selectedSession(); sel != nil {
-				if changed {
-					m.lastCapture = ""
-					m.pendingGotoBottom = true
-					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
-				}
+			if m.moveDown() {
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
+			} else if sel := m.selectedSession(); sel != nil {
 				cmds = append(cmds, fetchCapture(sel.TmuxPane))
 			}
 
@@ -400,8 +394,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selected >= len(m.sessions) {
 						m.selected = maxInt(0, len(m.sessions)-1)
 					}
-					m.lastCapture = ""
-					m.pendingGotoBottom = true
+					var cmd tea.Cmd
+					m, cmd = selectSession(m)
+					cmds = append(cmds, cmd)
 					// Cleanup and save sidebar state
 					m.cleanupSidebarState()
 					m.saveSidebarState()
@@ -510,8 +505,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.selected--
-				m.lastCapture = ""
-				m.pendingGotoBottom = true
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
 				m.saveSidebarState()
 			}
 
@@ -527,8 +523,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.selected++
-				m.lastCapture = ""
-				m.pendingGotoBottom = true
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
 				m.saveSidebarState()
 			}
 		}
@@ -545,11 +542,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if idx := m.sessionIndexAtY(msg.Y); idx >= 0 && idx < len(m.sessions) {
 					if m.selected != idx {
 						m.selected = idx
-						m.lastCapture = ""
-						m.pendingGotoBottom = true
-						if sel := m.selectedSession(); sel != nil {
-							cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
-						}
+						var cmd tea.Cmd
+						m, cmd = selectSession(m)
+						cmds = append(cmds, cmd)
 					}
 				}
 			}
@@ -573,97 +568,76 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── Key forwarding ─────────────────────────────────────────────────────────
 
+// tmuxKeyNames maps tea key strings to tmux send-keys names.
+var tmuxKeyNames = map[string]string{
+	"enter":     "Enter",
+	"backspace": "BSpace",
+	"delete":    "DC",
+	"tab":       "Tab",
+	"ctrl+i":    "Tab",
+	"shift+tab": "BTab",
+	"up":        "Up",
+	"down":      "Down",
+	"left":      "Left",
+	"right":     "Right",
+	"home":      "Home",
+	"end":       "End",
+	"pgup":      "PPage",
+	"pgdown":    "NPage",
+	"esc":       "Escape",
+	"ctrl+a":    "C-a",
+	"ctrl+b":    "C-b",
+	"ctrl+c":    "C-c",
+	"ctrl+d":    "C-d",
+	"ctrl+e":    "C-e",
+	"ctrl+f":    "C-f",
+	"ctrl+g":    "C-g",
+	// ctrl+h is the exit-insert-mode key — intentionally absent.
+	"ctrl+j": "C-j",
+	"ctrl+k": "C-k",
+	"ctrl+l": "C-l",
+	"ctrl+m": "Enter",
+	"ctrl+n": "C-n",
+	"ctrl+o": "C-o",
+	"ctrl+p": "C-p",
+	"ctrl+q": "C-q",
+	"ctrl+r": "C-r",
+	"ctrl+s": "C-s",
+	"ctrl+t": "C-t",
+	"ctrl+u": "C-u",
+	"ctrl+v": "C-v",
+	"ctrl+w": "C-w",
+	"ctrl+x": "C-x",
+	"ctrl+y": "C-y",
+	"ctrl+z": "C-z",
+}
+
 // forwardKey sends a single key event to the given tmux pane.
 // ctrl+h is the exit-insert-mode key and is never forwarded.
 func forwardKey(paneID string, msg tea.KeyMsg) error {
-	switch msg.String() {
-	case "ctrl+h":
+	if msg.String() == "ctrl+h" {
 		return nil // exit key — handled by caller
-	case "enter":
-		return tmux.SendKeyName(paneID, "Enter")
-	case "backspace":
-		return tmux.SendKeyName(paneID, "BSpace")
-	case "delete":
-		return tmux.SendKeyName(paneID, "DC")
-	case "tab", "ctrl+i":
-		return tmux.SendKeyName(paneID, "Tab")
-	case "shift+tab":
-		return tmux.SendKeyName(paneID, "BTab")
-	case "up":
-		return tmux.SendKeyName(paneID, "Up")
-	case "down":
-		return tmux.SendKeyName(paneID, "Down")
-	case "left":
-		return tmux.SendKeyName(paneID, "Left")
-	case "right":
-		return tmux.SendKeyName(paneID, "Right")
-	case "home":
-		return tmux.SendKeyName(paneID, "Home")
-	case "end":
-		return tmux.SendKeyName(paneID, "End")
-	case "pgup":
-		return tmux.SendKeyName(paneID, "PPage")
-	case "pgdown":
-		return tmux.SendKeyName(paneID, "NPage")
-	case "esc":
-		return tmux.SendKeyName(paneID, "Escape")
-	case "ctrl+a":
-		return tmux.SendKeyName(paneID, "C-a")
-	case "ctrl+b":
-		return tmux.SendKeyName(paneID, "C-b")
-	case "ctrl+c":
-		return tmux.SendKeyName(paneID, "C-c")
-	case "ctrl+d":
-		return tmux.SendKeyName(paneID, "C-d")
-	case "ctrl+e":
-		return tmux.SendKeyName(paneID, "C-e")
-	case "ctrl+f":
-		return tmux.SendKeyName(paneID, "C-f")
-	case "ctrl+g":
-		return tmux.SendKeyName(paneID, "C-g")
-	// ctrl+h: exit key, not forwarded
-	case "ctrl+j":
-		return tmux.SendKeyName(paneID, "C-j")
-	case "ctrl+k":
-		return tmux.SendKeyName(paneID, "C-k")
-	case "ctrl+l":
-		return tmux.SendKeyName(paneID, "C-l")
-	case "ctrl+m":
-		return tmux.SendKeyName(paneID, "Enter")
-	case "ctrl+n":
-		return tmux.SendKeyName(paneID, "C-n")
-	case "ctrl+o":
-		return tmux.SendKeyName(paneID, "C-o")
-	case "ctrl+p":
-		return tmux.SendKeyName(paneID, "C-p")
-	case "ctrl+q":
-		return tmux.SendKeyName(paneID, "C-q")
-	case "ctrl+r":
-		return tmux.SendKeyName(paneID, "C-r")
-	case "ctrl+s":
-		return tmux.SendKeyName(paneID, "C-s")
-	case "ctrl+t":
-		return tmux.SendKeyName(paneID, "C-t")
-	case "ctrl+u":
-		return tmux.SendKeyName(paneID, "C-u")
-	case "ctrl+v":
-		return tmux.SendKeyName(paneID, "C-v")
-	case "ctrl+w":
-		return tmux.SendKeyName(paneID, "C-w")
-	case "ctrl+x":
-		return tmux.SendKeyName(paneID, "C-x")
-	case "ctrl+y":
-		return tmux.SendKeyName(paneID, "C-y")
-	case "ctrl+z":
-		return tmux.SendKeyName(paneID, "C-z")
 	}
-
-	// Printable runes — send literally.
-	if len(msg.Runes) > 0 {
+	if name, ok := tmuxKeyNames[msg.String()]; ok {
+		return tmux.SendKeyName(paneID, name)
+	}
+	if msg.Type == tea.KeyRunes {
 		return tmux.SendLiteral(paneID, string(msg.Runes))
 	}
-
 	return nil
+}
+
+// selectSession resets viewport state for a newly selected session and returns
+// commands to resize the observed pane and fetch its capture.
+func selectSession(m Model) (Model, tea.Cmd) {
+	m.lastCapture = ""
+	m.pendingGotoBottom = true
+	var cmds []tea.Cmd
+	if sel := m.selectedSession(); sel != nil {
+		cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+		cmds = append(cmds, fetchCapture(sel.TmuxPane))
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
