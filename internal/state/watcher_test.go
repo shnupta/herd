@@ -29,7 +29,7 @@ func TestWatcherFiresOnCreate(t *testing.T) {
 	}
 
 	select {
-	case got := <-w.Events:
+	case got := <-w.Events():
 		if got.SessionID != "create-test" {
 			t.Errorf("SessionID = %q, want create-test", got.SessionID)
 		}
@@ -70,7 +70,7 @@ func TestWatcherFiresOnModify(t *testing.T) {
 	}
 
 	select {
-	case got := <-w.Events:
+	case got := <-w.Events():
 		if got.SessionID != "modify-test" {
 			t.Errorf("SessionID = %q, want modify-test", got.SessionID)
 		}
@@ -112,7 +112,7 @@ func TestWatcherIgnoresNonJSON(t *testing.T) {
 	}
 
 	select {
-	case got := <-w.Events:
+	case got := <-w.Events():
 		if got.SessionID != "real-session" {
 			t.Errorf("SessionID = %q, want real-session", got.SessionID)
 		}
@@ -147,7 +147,7 @@ func TestWatcherIgnoresMalformedJSON(t *testing.T) {
 	}
 
 	select {
-	case got := <-w.Events:
+	case got := <-w.Events():
 		if got.SessionID != "after-bad" {
 			t.Errorf("SessionID = %q, want after-bad", got.SessionID)
 		}
@@ -183,7 +183,7 @@ func TestWatcherMultipleFiles(t *testing.T) {
 	timeout := time.After(5 * time.Second)
 	for len(seen) < 3 {
 		select {
-		case got := <-w.Events:
+		case got := <-w.Events():
 			seen[got.SessionID] = true
 		case <-timeout:
 			t.Fatalf("timed out, only saw %d/3 sessions: %v", len(seen), seen)
@@ -223,7 +223,7 @@ func TestWatcherCloseStopsLoop(t *testing.T) {
 	// Events channel should be closed after loop exits.
 	for {
 		select {
-		case _, ok := <-w.Events:
+		case _, ok := <-w.Events():
 			if !ok {
 				return // channel closed, success
 			}
@@ -261,7 +261,7 @@ func TestWatcherConcurrentAccess(t *testing.T) {
 
 	// Just verify we get at least one event without crashing.
 	select {
-	case <-w.Events:
+	case <-w.Events():
 		// Got an event, good.
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for any concurrent event")

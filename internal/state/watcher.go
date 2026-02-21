@@ -6,14 +6,28 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// WatcherIface is implemented by Watcher and any test double.
+type WatcherIface interface {
+	// Events returns the channel on which state updates are delivered.
+	Events() <-chan SessionState
+	// Close stops the watcher and releases resources.
+	Close()
+}
+
+// compile-time check
+var _ WatcherIface = (*Watcher)(nil)
+
 // Watcher watches ~/.herd/sessions/ for state file changes.
 type Watcher struct {
-	Events chan SessionState
-	Errors chan error
+	events chan SessionState
+	errors chan error
 	done   chan struct{}
 	fw     *fsnotify.Watcher
 	store  *Store
 }
+
+// Events returns the channel on which state updates are delivered.
+func (w *Watcher) Events() <-chan SessionState { return w.events }
 
 // NewWatcher creates and starts a file watcher on the default state directory.
 func NewWatcher() (*Watcher, error) {
@@ -36,8 +50,8 @@ func NewWatcherForStore(store *Store) (*Watcher, error) {
 	}
 
 	w := &Watcher{
-		Events: make(chan SessionState, 16),
-		Errors: make(chan error, 4),
+		events: make(chan SessionState, 16),
+		errors: make(chan error, 4),
 		done:   make(chan struct{}),
 		fw:     fw,
 		store:  store,
@@ -47,7 +61,7 @@ func NewWatcherForStore(store *Store) (*Watcher, error) {
 }
 
 func (w *Watcher) loop() {
-	defer close(w.Events)
+	defer close(w.events)
 	for {
 		select {
 		case <-w.done:
@@ -70,7 +84,7 @@ func (w *Watcher) loop() {
 			for _, s := range states {
 				if w.store.Path(s.SessionID) == event.Name {
 					select {
-					case w.Events <- s:
+					case w.events <- s:
 					default:
 					}
 					break
@@ -81,7 +95,7 @@ func (w *Watcher) loop() {
 				return
 			}
 			select {
-			case w.Errors <- err:
+			case w.errors <- err:
 			default:
 			}
 		}
