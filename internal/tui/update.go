@@ -508,9 +508,11 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 						}
 					} else {
-						m.pinCounter++
+						// Each member gets a sequential counter so that
+						// within-group reorder (J/K) survives session refreshes.
 						for _, s := range m.sessions {
 							if k, _ := m.groupKeyAndName(s); k == gKey {
+								m.pinCounter++
 								m.pinned[s.Key()] = m.pinCounter
 							}
 						}

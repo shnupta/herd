@@ -543,6 +543,19 @@ func (m *Model) toggleGroupAtCursor() {
 	}
 }
 
+// isGroupPinned reports whether any session belonging to gKey is pinned.
+// Because groups are pinned as a unit, one member in m.pinned means all are.
+func (m *Model) isGroupPinned(gKey string) bool {
+	for _, s := range m.sessions {
+		if k, _ := m.groupKeyAndName(s); k == gKey {
+			if _, ok := m.pinned[s.Key()]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // sessionGroupKey returns the group key for the session at index idx, or ""
 // when the session is ungrouped or idx is out of range.
 func (m *Model) sessionGroupKey(idx int) string {

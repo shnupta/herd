@@ -231,10 +231,12 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 		}
 	}
 
-	// Add pin indicator
+	// Only show pin on ungrouped sessions; grouped sessions show it on the header.
 	pinIndicator := ""
-	if _, isPinned := m.pinned[s.Key()]; isPinned {
-		pinIndicator = "📌 "
+	if gKey, _ := m.groupKeyAndName(s); gKey == "" {
+		if _, isPinned := m.pinned[s.Key()]; isPinned {
+			pinIndicator = "📌 "
+		}
 	}
 
 	nameStyle := styleSessionItem
@@ -261,7 +263,11 @@ func (m Model) renderGroupHeader(item viewItem, selected bool) string {
 		arrow = "▶"
 	}
 	dot := stateIcon(item.aggState.String())
-	label := fmt.Sprintf("%s %s (%d)  %s", arrow, item.groupName, item.count, dot)
+	pinIndicator := ""
+	if m.isGroupPinned(item.groupKey) {
+		pinIndicator = "📌 "
+	}
+	label := fmt.Sprintf("%s%s %s (%d)  %s", pinIndicator, arrow, item.groupName, item.count, dot)
 
 	style := styleGroupHeader
 	if selected {
