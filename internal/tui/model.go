@@ -45,6 +45,10 @@ type stateUpdateMsg state.SessionState
 
 type errMsg struct{ err error }
 
+type worktreeLaunchedMsg string
+
+type worktreeRemovedMsg struct{ sessionPane string }
+
 // Model is the root BubbleTea model.
 type Model struct {
 	// Dimensions
@@ -78,6 +82,9 @@ type Model struct {
 
 	// Project picker
 	pickerModel *PickerModel // the picker sub-model
+
+	// Worktree panel
+	worktreeModel *WorktreeModel // the worktree sub-model
 
 	// Rename
 	renameInput textinput.Model  // text input for the rename overlay
