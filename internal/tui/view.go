@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/shnupta/herd/internal/names"
 	"github.com/shnupta/herd/internal/session"
 )
 
@@ -222,7 +223,7 @@ func (m Model) renderSessionList() string {
 
 func (m Model) renderSessionItem(i int, s session.Session) string {
 	icon := stateIcon(s.State.String())
-	name := m.namesStore.Get(s.Key())
+	name := names.Get(s.Key())
 	if name == "" {
 		name = filepath.Base(s.ProjectPath)
 		if name == "." || name == "" {

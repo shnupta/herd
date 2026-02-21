@@ -10,7 +10,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/shnupta/herd/internal/diff"
+	"github.com/shnupta/herd/internal/groups"
 	"github.com/shnupta/herd/internal/hook"
+	"github.com/shnupta/herd/internal/names"
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/state"
 	"github.com/shnupta/herd/internal/tmux"
@@ -143,7 +145,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "enter":
 				groupName := strings.TrimSpace(m.groupSetInput.Value())
-				_ = m.groupsStore.Set(m.groupSetKey, groupName)
+				_ = groups.Set(m.groupSetKey, groupName)
 				m.groupSetMode = false
 				m.groupSetInput.Reset()
 				m.groupSetKey = ""
@@ -168,9 +170,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				label := strings.TrimSpace(m.renameInput.Value())
 				if label == "" {
-					_ = m.namesStore.Delete(m.renameKey)
+					_ = names.Delete(m.renameKey)
 				} else {
-					_ = m.namesStore.Set(m.renameKey, label)
+					_ = names.Set(m.renameKey, label)
 				}
 				m.renameMode = false
 				m.renameInput.Reset()
@@ -463,7 +465,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Open rename overlay for the selected session
 			if sel := m.selectedSession(); sel != nil {
 				m.renameKey = sel.Key()
-				m.renameInput.SetValue(m.namesStore.Get(m.renameKey))
+				m.renameInput.SetValue(names.Get(m.renameKey))
 				m.renameInput.Focus()
 				m.renameMode = true
 			}
@@ -476,7 +478,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursorOnGroup == "" {
 				if sel := m.selectedSession(); sel != nil {
 					m.groupSetKey = sel.Key()
-					current := m.groupsStore.Get(m.groupSetKey)
+					current := groups.Get(m.groupSetKey)
 					m.groupSetInput.SetValue(current)
 					m.groupSetInput.Focus()
 					m.groupSetMode = true
