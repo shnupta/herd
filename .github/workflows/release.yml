@@ -24,9 +24,8 @@ jobs:
           LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
 
           if [ -z "$LATEST_TAG" ]; then
-            echo "No semver tags found, starting at v1.2.0 (1.0 and 1.1 exist as bare tags)"
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            echo "new_tag=v1.2.0" >> $GITHUB_OUTPUT
+            echo "No semver tags found, skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
