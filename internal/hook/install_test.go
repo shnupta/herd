@@ -221,3 +221,19 @@ func TestInstallAllHookEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestMakeRule(t *testing.T) {
+	rule := makeRule("herd hook Stop")
+	if len(rule.Hooks) != 1 {
+		t.Fatalf("Hooks count = %d, want 1", len(rule.Hooks))
+	}
+	if rule.Hooks[0].Type != "command" {
+		t.Errorf("Type = %q, want command", rule.Hooks[0].Type)
+	}
+	if rule.Hooks[0].Command != "herd hook Stop" {
+		t.Errorf("Command = %q, want 'herd hook Stop'", rule.Hooks[0].Command)
+	}
+	if rule.Matcher != "" {
+		t.Errorf("Matcher = %q, want empty", rule.Matcher)
+	}
+}
