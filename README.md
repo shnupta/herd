@@ -5,7 +5,7 @@
 
 A TUI for managing multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions in tmux.
 
-![herd demo](https://github.com/shnupta/herd/raw/main/demo.gif)
+![herd demo](https://github.com/shnupta/herd/raw/main/demo.png)
 
 ## Install
 
