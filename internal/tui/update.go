@@ -187,6 +187,7 @@ func (m Model) updateGroupSetMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = ModeNormal
 			m.groupSetInput.Reset()
 			m.groupSetKey = ""
+			m.itemsDirty = true
 			return m, nil
 		}
 	}
@@ -235,6 +236,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			merged = append(merged, s)
 		}
 		m.sessions = merged
+		m.itemsDirty = true
 		m.cleanupSidebarState()
 		if m.sidebarDirty {
 			m.saveSidebarState()
@@ -521,9 +523,16 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.ScrollDown(3)
 		case tea.MouseButtonLeft:
 			if msg.X < sessionPaneWidth {
-				if idx := m.sessionIndexAtY(msg.Y); idx >= 0 && idx < len(m.sessions) {
+				idx, groupKey := m.sessionIndexAtY(msg.Y)
+				if groupKey != "" {
+					// Clicked a group header — toggle collapse
+					m.collapsedGroups[groupKey] = !m.collapsedGroups[groupKey]
+					m.itemsDirty = true
+				} else if idx >= 0 && idx < len(m.sessions) {
 					if m.selected != idx {
 						m.selected = idx
+						m.cursorOnGroup = ""
+						m.itemsDirty = true
 						var cmd tea.Cmd
 						m, cmd = selectSession(m)
 						cmds = append(cmds, cmd)
@@ -672,29 +681,13 @@ func (m Model) applyStates(states []state.SessionState) Model {
 			continue
 		}
 		m.sessions[i].ID = st.SessionID
-		m.sessions[i].State = parseState(st.State)
+		m.sessions[i].State = session.ParseState(st.State)
 		m.sessions[i].CurrentTool = st.CurrentTool
 		m.sessions[i].UpdatedAt = st.UpdatedAt
 	}
 	return m
 }
 
-func parseState(s string) session.State {
-	switch s {
-	case "working":
-		return session.StateWorking
-	case "waiting":
-		return session.StateWaiting
-	case "plan_ready":
-		return session.StatePlanReady
-	case "notifying":
-		return session.StateNotifying
-	case "idle":
-		return session.StateIdle
-	default:
-		return session.StateUnknown
-	}
-}
 
 func (m Model) recalcLayout() Model {
 	// outputHeaderH is 2 because styleOutputHeader has BorderBottom which adds a row.
@@ -719,13 +712,54 @@ func (m Model) recalcLayout() Model {
 	return m
 }
 
-func (m Model) sessionIndexAtY(y int) int {
-	// Header is row 0; each session takes 2 rows (name + meta line).
-	contentY := y - 1
+// sessionIndexAtY maps a screen Y coordinate to the sidebar item at that
+// position. Returns (sessionIdx, groupKey) where:
+//   - sessionIdx >= 0: a session row was clicked (groupKey is "")
+//   - groupKey != "": a group header was clicked (sessionIdx is -1)
+//   - (-1, ""): click fell outside any item
+func (m *Model) sessionIndexAtY(y int) (int, string) {
+	const headerH = 1
+	contentY := y - headerH
 	if contentY < 0 {
-		return -1
+		return -1, ""
 	}
-	return contentY / 2
+
+	// When filtering, there's an extra filter bar line at the top
+	// and the list is flat (no group headers).
+	if m.mode == ModeFilter || m.isFiltered() {
+		contentY-- // skip filter bar
+		if contentY < 0 {
+			return -1, ""
+		}
+		sessions := m.filteredSessions()
+		idx := contentY / 2
+		if idx >= len(sessions) {
+			return -1, ""
+		}
+		if m.filtered != nil && idx < len(m.filtered) {
+			return m.filtered[idx], ""
+		}
+		return idx, ""
+	}
+
+	// Walk viewItems to find the item at the clicked row.
+	// Group headers occupy 1 row; session items occupy 2 rows.
+	items := m.buildViewItems()
+	row := 0
+	for _, item := range items {
+		if item.isHeader {
+			if contentY == row {
+				return -1, item.groupKey
+			}
+			row++
+		} else {
+			if contentY >= row && contentY < row+2 {
+				return item.sessionIdx, ""
+			}
+			row += 2
+		}
+	}
+	return -1, ""
 }
 
 // truncateLines clips any line wider than maxWidth to prevent frame overflow.

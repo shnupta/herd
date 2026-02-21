@@ -2,6 +2,7 @@ package tui
 
 import (
 	"os"
+	"sort"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -55,9 +56,10 @@ type Model struct {
 
 	// Output panel
 	viewport          viewport.Model
-	lastCapture       string // raw content from last capture-pane
-	atBottom          bool   // whether viewport was at the bottom before update
-	pendingGotoBottom bool   // true after a session switch; forces GotoBottom on next capture
+	lastCapture         string // raw content from last capture-pane
+	atBottom            bool   // whether viewport was at the bottom before update
+	pendingGotoBottom   bool   // true after a session switch; forces GotoBottom on next capture
+	forceViewportRefresh bool  // explicit signal to re-render viewport on next capture
 
 	// Input
 	insertMode bool // true when keystrokes are forwarded to the selected pane
@@ -98,6 +100,10 @@ type Model struct {
 	pinCounter   int            // increments on each pin to assign order
 	savedOrder   []string       // persisted order of session keys
 	sidebarDirty bool           // true if sidebar state needs saving
+
+	// Sidebar item cache
+	cachedItems []viewItem
+	itemsDirty  bool
 
 	// State
 	spinner  spinner.Model
@@ -161,6 +167,7 @@ func New(w *state.Watcher) Model {
 		savedOrder:      savedOrder,
 		teamsStore:      ts,
 		collapsedGroups: make(map[string]bool),
+		itemsDirty:      true,
 	}
 }
 
@@ -263,29 +270,22 @@ func (m *Model) sortSessions() {
 	}
 
 	// Sort pinned sessions by their pin order
-	for i := 0; i < len(pinned)-1; i++ {
-		for j := i + 1; j < len(pinned); j++ {
-			if m.pinned[pinned[i].Key()] > m.pinned[pinned[j].Key()] {
-				pinned[i], pinned[j] = pinned[j], pinned[i]
-			}
-		}
-	}
+	sort.Slice(pinned, func(i, j int) bool {
+		return m.pinned[pinned[i].Key()] < m.pinned[pinned[j].Key()]
+	})
 
 	// Sort unpinned sessions by saved order (unknown keys go to end)
-	for i := 0; i < len(unpinned)-1; i++ {
-		for j := i + 1; j < len(unpinned); j++ {
-			iOrder, iOk := orderIndex[unpinned[i].Key()]
-			jOrder, jOk := orderIndex[unpinned[j].Key()]
-			// If both have saved order, sort by it
-			// If only one has saved order, it comes first
-			// If neither has saved order, keep original order
-			if iOk && jOk && iOrder > jOrder {
-				unpinned[i], unpinned[j] = unpinned[j], unpinned[i]
-			} else if !iOk && jOk {
-				unpinned[i], unpinned[j] = unpinned[j], unpinned[i]
-			}
+	sort.Slice(unpinned, func(i, j int) bool {
+		iOrder, iOk := orderIndex[unpinned[i].Key()]
+		jOrder, jOk := orderIndex[unpinned[j].Key()]
+		// If both have saved order, sort by it
+		// If only one has saved order, it comes first
+		// If neither has saved order, keep original order
+		if iOk && jOk {
+			return iOrder < jOrder
 		}
-	}
+		return jOk && !iOk
+	})
 
 	// Combine: pinned first, then unpinned
 	m.sessions = append(pinned, unpinned...)
@@ -353,6 +353,16 @@ func worstState(states []session.State) session.State {
 		}
 	}
 	return worst
+}
+
+// viewItems returns the cached sidebar row list, rebuilding only when dirty.
+func (m *Model) viewItems() []viewItem {
+	if !m.itemsDirty && m.cachedItems != nil {
+		return m.cachedItems
+	}
+	m.cachedItems = m.buildViewItems()
+	m.itemsDirty = false
+	return m.cachedItems
 }
 
 // buildViewItems builds the ordered list of renderable/navigable sidebar rows.
@@ -447,7 +457,7 @@ func (m *Model) findCursorPos(items []viewItem) int {
 // moveDown advances the cursor to the next navigable row and returns true if
 // the selected session changed (so callers can trigger viewport/resize actions).
 func (m *Model) moveDown() bool {
-	items := m.buildViewItems()
+	items := m.viewItems()
 	if len(items) == 0 {
 		return false
 	}
@@ -475,7 +485,7 @@ func (m *Model) moveDown() bool {
 // moveUp moves the cursor to the previous navigable row and returns true if
 // the selected session changed.
 func (m *Model) moveUp() bool {
-	items := m.buildViewItems()
+	items := m.viewItems()
 	if len(items) == 0 {
 		return false
 	}
