@@ -28,6 +28,12 @@
 - [x] Agent team auto-grouping — sessions belonging to a Claude Code agent team are
       automatically grouped under the team name by reading `~/.claude/teams/*/config.json`;
       custom group assignments still take precedence
+- [x] Worktrees (`w`) — list, open, create, and remove git worktrees for the selected
+      session's repo; `enter` switches to or launches a session at a worktree,
+      `enter` on "New worktree..." creates branch + worktree + session, `x` removes
+      a non-main worktree (killing any associated session after confirmation)
+- [x] Pane resize — `resizePaneToViewport` fires on `WindowSizeMsg` and selection
+      change so the observed session's output wraps to herd's viewport width/height
 
 ## In progress / next
 
@@ -35,29 +41,9 @@
 Hide/show individual sessions or whole groups from the sidebar.
 Affects display only; session state still syncs in background.
 
-### Worktrees (`w`)
-For the selected session's project, list git worktrees.
-Option to open an existing worktree in a new Claude session, or create a new
-worktree + session in one step.
-(Key binding exists; core functionality not yet implemented.)
-
 ### Zoom mode (`z`)
 Hide the session sidebar entirely so the viewport fills the terminal.
 Toggle back with `z`.
-
-### Agent team pane resize
-When viewing an agent team session, resize the tmux pane to match herd's viewport
-dimensions so Claude's TUI renders at the correct width and `capture-pane` output
-fits without truncation.
-
-Proposed approach: `tmux resize-pane -t <pane-id> -x <viewport-width> -y <viewport-height>`
-fired when the selected session changes and on `WindowSizeMsg`.
-
-Open question: it's unclear how Claude Code lays out teammate panes (same window as the
-lead, separate window, separate session). Resizing a pane adjusts neighbouring panes in
-the same window, which could disrupt the user's tmux layout. Need to verify the window
-topology before implementing to avoid unintended side-effects. Consider making this
-opt-in behind a setting initially.
 
 ### Improve session discovery
 Current approach scans `pane_current_command` for `"claude"` or a semver string (e.g.
