@@ -9,8 +9,8 @@ import (
 )
 
 // Discover scans all tmux panes and returns sessions for any that are running Claude.
-func Discover() ([]Session, error) {
-	panes, err := tmux.ListPanes()
+func Discover(client tmux.ClientIface) ([]Session, error) {
+	panes, err := client.ListPanes()
 	if err != nil {
 		return nil, err
 	}
