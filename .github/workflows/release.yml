@@ -2,8 +2,8 @@ name: Release
 
 on:
   schedule:
-    # 11 PM UTC daily (7 PM ET, 6 PM CT)
-    - cron: "0 23 * * *"
+    # 5 AM UTC = midnight EST (1 AM EDT during daylight saving)
+    - cron: "0 5 * * *"
   workflow_dispatch: # manual trigger
 
 permissions:
