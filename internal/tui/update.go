@@ -63,6 +63,7 @@ func (m Model) updateReviewMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeNormal
 		m.reviewModel = nil
 		m.lastCapture = ""
+		m.forceViewportRefresh = true
 		if sel := m.selectedSession(); sel != nil {
 			return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
 		}
@@ -71,6 +72,7 @@ func (m Model) updateReviewMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeNormal
 		m.reviewModel = nil
 		m.lastCapture = ""
+		m.forceViewportRefresh = true
 		if sel := m.selectedSession(); sel != nil {
 			return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
 		}
@@ -99,11 +101,13 @@ func (m Model) updatePickerMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeNormal
 		m.pickerModel = nil
 		m.lastCapture = ""
+		m.forceViewportRefresh = true
 		return m, tea.Batch(discoverSessions(), tickCapture(), tickSessionRefresh())
 	} else if pickerModel.Cancelled() {
 		m.mode = ModeNormal
 		m.pickerModel = nil
 		m.lastCapture = ""
+		m.forceViewportRefresh = true
 		if sel := m.selectedSession(); sel != nil {
 			return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
 		}
@@ -132,7 +136,6 @@ func (m Model) updateFilterMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = ModeNormal
 				m.filterQuery = ""
 				m.filtered = nil
-				m.itemsDirty = true
 				return m, nil
 			}
 		}
@@ -261,6 +264,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if s.TmuxPane == m.pendingSelectPane {
 					m.selected = i
 					m.lastCapture = ""
+					m.forceViewportRefresh = true
 					m.pendingGotoBottom = true
 					m.pendingSelectPane = ""
 					m.pendingQuickRetried = false
@@ -294,25 +298,30 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case captureMsg:
-		if sel := m.selectedSession(); sel != nil && sel.TmuxPane == msg.paneID && msg.content != m.lastCapture {
-			m.lastCapture = msg.content
-			if m.pendingGotoBottom {
-				m.atBottom = true
-				m.pendingGotoBottom = false
-			} else {
-				m.atBottom = m.viewport.AtBottom()
-			}
+		if sel := m.selectedSession(); sel != nil && sel.TmuxPane == msg.paneID {
+			contentChanged := msg.content != m.lastCapture
+			if contentChanged || m.forceViewportRefresh {
+				m.lastCapture = msg.content
+				m.forceViewportRefresh = false
+				// After a session switch, always jump to the bottom of the new session's
+				// output rather than inheriting the scroll position from the previous one.
+				if m.pendingGotoBottom {
+					m.atBottom = true
+					m.pendingGotoBottom = false
+				} else {
+					m.atBottom = m.viewport.AtBottom()
+				}
 
-			m.viewport.SetContent(truncateLines(cleanCapture(msg.content), m.viewport.Width))
-			if m.atBottom {
-				m.viewport.GotoBottom()
+				m.viewport.SetContent(truncateLines(cleanCapture(msg.content), m.viewport.Width))
+				if m.atBottom {
+					m.viewport.GotoBottom()
+				}
 			}
 		}
 
 	// ── Hook state update ──────────────────────────────────────────────────
 	case stateUpdateMsg:
 		m = m.applyStates([]state.SessionState{state.SessionState(msg)})
-		m.itemsDirty = true
 		cmds = append(cmds, waitForStateEvent(m.stateWatcher))
 
 	// ── Spinner ────────────────────────────────────────────────────────────
@@ -348,20 +357,28 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
-			if m.moveUp() {
-				var cmd tea.Cmd
-				m, cmd = selectSession(m)
-				cmds = append(cmds, cmd)
-			} else if sel := m.selectedSession(); sel != nil {
+			changed := m.moveUp()
+			// Always fetch immediately so the viewport reflects the new session
+			// without waiting for the next 100ms tick.
+			if sel := m.selectedSession(); sel != nil {
+				if changed {
+					m.lastCapture = ""
+					m.forceViewportRefresh = true
+					m.pendingGotoBottom = true
+					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+				}
 				cmds = append(cmds, fetchCapture(sel.TmuxPane))
 			}
 
 		case key.Matches(msg, keys.Down):
-			if m.moveDown() {
-				var cmd tea.Cmd
-				m, cmd = selectSession(m)
-				cmds = append(cmds, cmd)
-			} else if sel := m.selectedSession(); sel != nil {
+			changed := m.moveDown()
+			if sel := m.selectedSession(); sel != nil {
+				if changed {
+					m.lastCapture = ""
+					m.forceViewportRefresh = true
+					m.pendingGotoBottom = true
+					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+				}
 				cmds = append(cmds, fetchCapture(sel.TmuxPane))
 			}
 
@@ -398,6 +415,8 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					var cmd tea.Cmd
 					m, cmd = selectSession(m)
 					cmds = append(cmds, cmd)
+					m.forceViewportRefresh = true
+					m.itemsDirty = true
 					m.cleanupSidebarState()
 					m.saveSidebarState()
 				}
@@ -450,7 +469,6 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Filter):
 			m.mode = ModeFilter
 			m.filterInput.Focus()
-			m.itemsDirty = true
 
 		case key.Matches(msg, keys.Rename):
 			if sel := m.selectedSession(); sel != nil {
@@ -498,9 +516,10 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.selected--
-			var cmd tea.Cmd
-			m, cmd = selectSession(m)
-			cmds = append(cmds, cmd)
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
+				m.forceViewportRefresh = true
 				m.saveSidebarState()
 				m.itemsDirty = true
 			}
@@ -515,9 +534,10 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.selected++
-			var cmd tea.Cmd
-			m, cmd = selectSession(m)
-			cmds = append(cmds, cmd)
+				var cmd tea.Cmd
+				m, cmd = selectSession(m)
+				cmds = append(cmds, cmd)
+				m.forceViewportRefresh = true
 				m.saveSidebarState()
 				m.itemsDirty = true
 			}
@@ -545,6 +565,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 						var cmd tea.Cmd
 						m, cmd = selectSession(m)
 						cmds = append(cmds, cmd)
+						m.forceViewportRefresh = true
 					}
 				}
 			}
