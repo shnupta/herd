@@ -14,6 +14,7 @@ import (
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/sidebar"
 	"github.com/shnupta/herd/internal/state"
+	"github.com/shnupta/herd/internal/teams"
 )
 
 // viewItem represents a single renderable/navigable row in the session sidebar.
@@ -91,6 +92,7 @@ type Model struct {
 
 	// Session grouping
 	groupsStore     *groups.Store
+	teamsStore      *teams.Store    // reads ~/.claude/teams for auto-grouping
 	collapsedGroups map[string]bool // groupKey → true when collapsed
 	cursorOnGroup   string          // non-empty when cursor rests on a collapsed group header
 
@@ -158,6 +160,10 @@ func New(w *state.Watcher) Model {
 	gs := groups.NewStore(home + "/.herd/groups.json")
 	_ = gs.Load()
 
+	// Load Claude Code agent team configs for auto-grouping
+	ts := teams.NewStore(home + "/.claude/teams")
+	_ = ts.Load()
+
 	return Model{
 		spinner:         sp,
 		stateWatcher:    w,
@@ -170,6 +176,7 @@ func New(w *state.Watcher) Model {
 		savedOrder:      savedOrder,
 		namesStore:      ns,
 		groupsStore:     gs,
+		teamsStore:      ts,
 		collapsedGroups: make(map[string]bool),
 	}
 }
@@ -331,13 +338,18 @@ func (m *Model) saveSidebarState() {
 // ── Group helpers ──────────────────────────────────────────────────────────
 
 // groupKeyAndName returns the group key and human-readable name for a session.
-// Returns ("", "") when the session has no explicit group assignment, meaning
-// it should appear as a flat item with no header in the sidebar.
+// Returns ("", "") when the session has no group assignment, meaning it should
+// appear as a flat item with no header in the sidebar.
+//
+// Priority: explicit custom group > agent team membership > flat.
 func (m *Model) groupKeyAndName(s session.Session) (key, name string) {
 	if custom := m.groupsStore.Get(s.Key()); custom != "" {
 		return "custom:" + custom, custom
 	}
-	return "", "" // no explicit group — render flat
+	if team := m.teamsStore.TeamForSession(s.TmuxPane, s.ID); team != "" {
+		return "team:" + team, team
+	}
+	return "", "" // no group — render flat
 }
 
 // worstState returns the highest-priority state from the provided slice.
