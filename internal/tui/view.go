@@ -230,6 +230,11 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 	icon := stateIcon(s.State.String())
 	name := names.Get(s.Key())
 	if name == "" {
+		if agentName := m.teamsStore.MemberNameForSession(s.TmuxPane, s.ID); agentName != "" {
+			name = "@" + agentName
+		}
+	}
+	if name == "" {
 		name = filepath.Base(s.ProjectPath)
 		if name == "." || name == "" {
 			name = s.TmuxPane

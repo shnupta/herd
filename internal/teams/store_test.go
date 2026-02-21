@@ -246,6 +246,94 @@ func TestTeamForSessionPaneIDPriority(t *testing.T) {
 	}
 }
 
+func TestMemberNameForSession_Lead(t *testing.T) {
+	dir := t.TempDir()
+	writeTeamConfig(t, dir, "myteam", Team{
+		Name:          "myteam",
+		LeadSessionID: "lead-sess",
+		Members: []Member{
+			{AgentID: "a1", Name: "researcher", TmuxPaneID: "%5"},
+		},
+	})
+
+	s := NewStore(dir)
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := s.MemberNameForSession("", "lead-sess"); got != "lead" {
+		t.Errorf("expected 'lead' for lead session, got %q", got)
+	}
+}
+
+func TestMemberNameForSession_MemberByPaneID(t *testing.T) {
+	dir := t.TempDir()
+	writeTeamConfig(t, dir, "myteam", Team{
+		Name: "myteam",
+		Members: []Member{
+			{AgentID: "a1", Name: "pr-reviewer", TmuxPaneID: "%7"},
+		},
+	})
+
+	s := NewStore(dir)
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := s.MemberNameForSession("%7", ""); got != "pr-reviewer" {
+		t.Errorf("expected 'pr-reviewer', got %q", got)
+	}
+}
+
+func TestMemberNameForSession_MemberBySessionID(t *testing.T) {
+	dir := t.TempDir()
+	writeTeamConfig(t, dir, "myteam", Team{
+		Name: "myteam",
+		Members: []Member{
+			{AgentID: "a1", Name: "test-runner", SessionID: "sess-tr"},
+		},
+	})
+
+	s := NewStore(dir)
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := s.MemberNameForSession("", "sess-tr"); got != "test-runner" {
+		t.Errorf("expected 'test-runner', got %q", got)
+	}
+}
+
+func TestMemberNameForSession_NoMatch(t *testing.T) {
+	dir := t.TempDir()
+	writeTeamConfig(t, dir, "myteam", Team{
+		Name:          "myteam",
+		LeadSessionID: "lead-1",
+		Members: []Member{
+			{AgentID: "a1", Name: "worker", TmuxPaneID: "%5"},
+		},
+	})
+
+	s := NewStore(dir)
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := s.MemberNameForSession("%99", "unknown"); got != "" {
+		t.Errorf("expected empty for non-matching session, got %q", got)
+	}
+}
+
+func TestMemberNameForSession_EmptyStore(t *testing.T) {
+	s := NewStore(t.TempDir())
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.MemberNameForSession("%1", "any-sess"); got != "" {
+		t.Errorf("expected empty from empty store, got %q", got)
+	}
+}
+
 func TestReloadClearsOldTeams(t *testing.T) {
 	dir := t.TempDir()
 	writeTeamConfig(t, dir, "first", Team{

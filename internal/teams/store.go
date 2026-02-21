@@ -85,3 +85,23 @@ func (s *Store) TeamForSession(paneID, sessionID string) string {
 	}
 	return ""
 }
+
+// MemberNameForSession returns the agent's role name within its team, or "" if
+// the session is not part of any team. The team lead returns "lead"; other
+// members return their Name field from the team config.
+func (s *Store) MemberNameForSession(paneID, sessionID string) string {
+	for _, t := range s.teams {
+		if sessionID != "" && t.LeadSessionID == sessionID {
+			return "lead"
+		}
+		for _, m := range t.Members {
+			if paneID != "" && m.TmuxPaneID != "" && m.TmuxPaneID == paneID {
+				return m.Name
+			}
+			if sessionID != "" && m.SessionID != "" && m.SessionID == sessionID {
+				return m.Name
+			}
+		}
+	}
+	return ""
+}
