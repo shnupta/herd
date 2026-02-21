@@ -1,5 +1,8 @@
 # herd
 
+[![Go](https://github.com/shnupta/herd/actions/workflows/go.yml/badge.svg)](https://github.com/shnupta/herd/actions/workflows/go.yml)
+[![codecov](https://codecov.io/gh/shnupta/herd/branch/main/graph/badge.svg)](https://codecov.io/gh/shnupta/herd)
+
 A TUI for managing multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions in tmux.
 
 ![herd demo](https://github.com/shnupta/herd/raw/main/demo.gif)
