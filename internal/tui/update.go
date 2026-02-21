@@ -255,6 +255,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			// Still waiting — pane not visible yet (Claude initialising).
+			// Retry quickly rather than waiting for the full 3s interval.
+			if m.pendingSelectPane != "" {
+				cmds = append(cmds, pendingDiscoveryTick())
+			}
 		}
 		if states, err := state.ReadAll(); err == nil {
 			m = m.applyStates(states)

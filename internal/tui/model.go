@@ -111,8 +111,9 @@ type Model struct {
 }
 
 const (
-	pollInterval         = 100 * time.Millisecond
-	sessionRefreshInterval = 3 * time.Second
+	pollInterval            = 100 * time.Millisecond
+	sessionRefreshInterval  = 3 * time.Second
+	pendingDiscoveryInterval = 500 * time.Millisecond
 )
 
 // New returns an initialised Model.
@@ -204,6 +205,18 @@ func tickCapture() tea.Cmd {
 func tickSessionRefresh() tea.Cmd {
 	return tea.Tick(sessionRefreshInterval, func(t time.Time) tea.Msg {
 		return sessionRefreshMsg(t)
+	})
+}
+
+// pendingDiscoveryTick schedules a quick session re-discovery for when a newly
+// created pane hasn't appeared yet (Claude may still be initialising).
+func pendingDiscoveryTick() tea.Cmd {
+	return tea.Tick(pendingDiscoveryInterval, func(t time.Time) tea.Msg {
+		sessions, err := session.Discover()
+		if err != nil {
+			return errMsg{err}
+		}
+		return sessionsDiscoveredMsg(sessions)
 	})
 }
 
