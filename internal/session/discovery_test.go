@@ -7,9 +7,10 @@ import (
 )
 
 func noBranch(string) string { return "" }
+func noRoot(string) string   { return "" }
 
 func TestBuildSessionsEmpty(t *testing.T) {
-	sessions := buildSessions(nil, noBranch)
+	sessions := buildSessions(nil, noBranch, noRoot)
 	if sessions != nil {
 		t.Errorf("buildSessions(nil) = %v, want nil", sessions)
 	}
@@ -21,7 +22,7 @@ func TestBuildSessionsFiltersNonClaude(t *testing.T) {
 		{ID: "%2", CurrentCmd: "vim"},
 		{ID: "%3", CurrentCmd: "zsh"},
 	}
-	sessions := buildSessions(panes, noBranch)
+	sessions := buildSessions(panes, noBranch, noRoot)
 	if len(sessions) != 0 {
 		t.Errorf("buildSessions with non-claude panes = %d sessions, want 0", len(sessions))
 	}
@@ -40,7 +41,7 @@ func TestBuildSessionsWithVersionString(t *testing.T) {
 	}
 	sessions := buildSessions(panes, func(dir string) string {
 		return "main"
-	})
+	}, noRoot)
 
 	if len(sessions) != 1 {
 		t.Fatalf("buildSessions = %d sessions, want 1", len(sessions))
@@ -74,7 +75,7 @@ func TestBuildSessionsWithClaudeCommand(t *testing.T) {
 		{ID: "%10", CurrentCmd: "claude", CurrentPath: "/work"},
 		{ID: "%11", CurrentCmd: "bash", CurrentPath: "/work"},
 	}
-	sessions := buildSessions(panes, noBranch)
+	sessions := buildSessions(panes, noBranch, noRoot)
 	if len(sessions) != 1 {
 		t.Fatalf("buildSessions = %d sessions, want 1", len(sessions))
 	}
@@ -89,7 +90,7 @@ func TestBuildSessionsMixedPanes(t *testing.T) {
 		{ID: "%2", CurrentCmd: "bash"},
 		{ID: "%3", CurrentCmd: "claude"},
 	}
-	sessions := buildSessions(panes, noBranch)
+	sessions := buildSessions(panes, noBranch, noRoot)
 	if len(sessions) != 2 {
 		t.Errorf("buildSessions = %d sessions, want 2 (version + claude)", len(sessions))
 	}

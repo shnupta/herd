@@ -2,6 +2,7 @@ package tui
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -9,11 +10,23 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/shnupta/herd/internal/groups"
 	"github.com/shnupta/herd/internal/names"
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/sidebar"
 	"github.com/shnupta/herd/internal/state"
 )
+
+// viewItem represents a single renderable/navigable row in the session sidebar.
+// It is either a group header or a session entry.
+type viewItem struct {
+	isHeader  bool
+	groupKey  string
+	groupName string
+	count     int
+	aggState  session.State
+	sessionIdx int // index into m.sessions; meaningful only when !isHeader
+}
 
 // msg types used by the BubbleTea event loop.
 
@@ -69,8 +82,18 @@ type Model struct {
 	renameInput textinput.Model  // text input for the rename overlay
 	renameKey   string           // session key being renamed
 
+	// Group-set mode
+	groupSetMode  bool            // true when the group-assign overlay is open
+	groupSetInput textinput.Model // text input for the group name
+	groupSetKey   string          // session key being re-grouped
+
 	// Custom session names
 	namesStore *names.Store
+
+	// Session grouping
+	groupsStore     *groups.Store
+	collapsedGroups map[string]bool // groupKey → true when collapsed
+	cursorOnGroup   string          // non-empty when cursor rests on a collapsed group header
 
 	// Pending selection after new session creation
 	pendingSelectPane string // pane ID to select after next session discovery
@@ -106,6 +129,10 @@ func New(w *state.Watcher) Model {
 	ri.Placeholder = "session name..."
 	ri.CharLimit = 100
 
+	gi := textinput.New()
+	gi.Placeholder = "group name (empty to auto-detect)..."
+	gi.CharLimit = 100
+
 	// Load persisted sidebar state
 	pinned := make(map[string]int)
 	var savedOrder []string
@@ -126,16 +153,23 @@ func New(w *state.Watcher) Model {
 	ns := names.NewStore(home + "/.herd/names.json")
 	_ = ns.Load()
 
+	// Load persisted custom group assignments
+	gs := groups.NewStore(home + "/.herd/groups.json")
+	_ = gs.Load()
+
 	return Model{
-		spinner:      sp,
-		stateWatcher: w,
-		atBottom:     true,
-		filterInput:  fi,
-		renameInput:  ri,
-		pinned:       pinned,
-		pinCounter:   pinCounter,
-		savedOrder:   savedOrder,
-		namesStore:   ns,
+		spinner:         sp,
+		stateWatcher:    w,
+		atBottom:        true,
+		filterInput:     fi,
+		renameInput:     ri,
+		groupSetInput:   gi,
+		pinned:          pinned,
+		pinCounter:      pinCounter,
+		savedOrder:      savedOrder,
+		namesStore:      ns,
+		groupsStore:     gs,
+		collapsedGroups: make(map[string]bool),
 	}
 }
 
@@ -279,6 +313,212 @@ func (m *Model) saveSidebarState() {
 	}
 	_ = sidebar.Save(state) // Best effort, ignore errors
 	m.sidebarDirty = false
+}
+
+// ── Group helpers ──────────────────────────────────────────────────────────
+
+// groupKeyAndName returns the group key (for collapse map) and human-readable
+// name for the given session. Custom overrides via groupsStore take precedence,
+// then git root, then project path, then pane ID as last resort.
+func (m *Model) groupKeyAndName(s session.Session) (key, name string) {
+	if custom := m.groupsStore.Get(s.Key()); custom != "" {
+		return "custom:" + custom, custom
+	}
+	if s.GitRoot != "" {
+		return s.GitRoot, filepath.Base(s.GitRoot)
+	}
+	if s.ProjectPath != "" {
+		return s.ProjectPath, filepath.Base(s.ProjectPath)
+	}
+	return s.TmuxPane, s.TmuxPane
+}
+
+// worstState returns the highest-priority state from the provided slice.
+// Priority: Working > Waiting > PlanReady > Notifying > Idle > Unknown.
+func worstState(states []session.State) session.State {
+	priority := map[session.State]int{
+		session.StateWorking:   5,
+		session.StateWaiting:   4,
+		session.StatePlanReady: 3,
+		session.StateNotifying: 2,
+		session.StateIdle:      1,
+		session.StateUnknown:   0,
+	}
+	worst := session.StateUnknown
+	for _, s := range states {
+		if priority[s] > priority[worst] {
+			worst = s
+		}
+	}
+	return worst
+}
+
+// buildViewItems builds the ordered list of renderable/navigable sidebar rows.
+// When a filter is active the session list is flat (no groups); otherwise
+// sessions are grouped and headers are inserted at group boundaries.
+// Collapsed groups contribute only their header row.
+func (m *Model) buildViewItems() []viewItem {
+	if len(m.sessions) == 0 {
+		return nil
+	}
+
+	type groupData struct {
+		key      string
+		name     string
+		sessions []int // indices into m.sessions
+	}
+
+	var groupOrder []string
+	groupMap := make(map[string]*groupData)
+
+	for i, s := range m.sessions {
+		gKey, gName := m.groupKeyAndName(s)
+		if _, exists := groupMap[gKey]; !exists {
+			groupOrder = append(groupOrder, gKey)
+			groupMap[gKey] = &groupData{key: gKey, name: gName}
+		}
+		groupMap[gKey].sessions = append(groupMap[gKey].sessions, i)
+	}
+
+	// Only show group headers when there are multiple distinct groups,
+	// or when a single group is collapsed (so the user can expand it).
+	showHeaders := len(groupOrder) > 1
+
+	var items []viewItem
+	for _, gKey := range groupOrder {
+		g := groupMap[gKey]
+		var states []session.State
+		for _, idx := range g.sessions {
+			states = append(states, m.sessions[idx].State)
+		}
+		collapsed := m.collapsedGroups[g.key]
+		// Show this group's header if: multiple groups exist, OR this single
+		// group is collapsed (must be shown so the user can expand it).
+		if showHeaders || collapsed {
+			items = append(items, viewItem{
+				isHeader:  true,
+				groupKey:  g.key,
+				groupName: g.name,
+				count:     len(g.sessions),
+				aggState:  worstState(states),
+			})
+		}
+		if !collapsed {
+			for _, idx := range g.sessions {
+				items = append(items, viewItem{
+					isHeader:   false,
+					groupKey:   g.key,
+					sessionIdx: idx,
+				})
+			}
+		}
+	}
+	return items
+}
+
+// findCursorPos returns the index of the current cursor position in items.
+// Returns -1 if not found.
+func (m *Model) findCursorPos(items []viewItem) int {
+	if m.cursorOnGroup != "" {
+		for i, item := range items {
+			if item.isHeader && item.groupKey == m.cursorOnGroup {
+				return i
+			}
+		}
+		return -1
+	}
+	for i, item := range items {
+		if !item.isHeader && item.sessionIdx == m.selected {
+			return i
+		}
+	}
+	return -1
+}
+
+// moveDown advances the cursor to the next navigable row and returns true if
+// the selected session changed (so callers can trigger viewport/resize actions).
+func (m *Model) moveDown() bool {
+	items := m.buildViewItems()
+	if len(items) == 0 {
+		return false
+	}
+	curPos := m.findCursorPos(items)
+	if curPos < 0 {
+		curPos = -1
+	}
+	for i := curPos + 1; i < len(items); i++ {
+		item := items[i]
+		if item.isHeader {
+			if m.collapsedGroups[item.groupKey] {
+				m.cursorOnGroup = item.groupKey
+				return false
+			}
+			continue
+		}
+		prev := m.selected
+		m.cursorOnGroup = ""
+		m.selected = item.sessionIdx
+		return m.selected != prev
+	}
+	return false
+}
+
+// moveUp moves the cursor to the previous navigable row and returns true if
+// the selected session changed.
+func (m *Model) moveUp() bool {
+	items := m.buildViewItems()
+	if len(items) == 0 {
+		return false
+	}
+	curPos := m.findCursorPos(items)
+	if curPos < 0 {
+		curPos = len(items)
+	}
+	for i := curPos - 1; i >= 0; i-- {
+		item := items[i]
+		if item.isHeader {
+			if m.collapsedGroups[item.groupKey] {
+				m.cursorOnGroup = item.groupKey
+				return false
+			}
+			continue
+		}
+		prev := m.selected
+		m.cursorOnGroup = ""
+		m.selected = item.sessionIdx
+		return m.selected != prev
+	}
+	return false
+}
+
+// toggleGroupAtCursor collapses or expands the group that contains the current
+// cursor position (whether the cursor is on a header or a session within it).
+func (m *Model) toggleGroupAtCursor() {
+	if m.cursorOnGroup != "" {
+		// Cursor is on a collapsed group header — expand it and move into it.
+		gKey := m.cursorOnGroup
+		m.collapsedGroups[gKey] = false
+		m.cursorOnGroup = ""
+		// Select the first session in this group.
+		for _, s := range m.sessions {
+			k, _ := m.groupKeyAndName(s)
+			if k == gKey {
+				for i, ms := range m.sessions {
+					if ms.TmuxPane == s.TmuxPane {
+						m.selected = i
+						break
+					}
+				}
+				break
+			}
+		}
+		return
+	}
+	// Cursor is on a session — collapse its group.
+	if m.selected < len(m.sessions) {
+		gKey, _ := m.groupKeyAndName(m.sessions[m.selected])
+		m.collapsedGroups[gKey] = !m.collapsedGroups[gKey]
+	}
 }
 
 // cleanupSidebarState removes entries for sessions no longer active.

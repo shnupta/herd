@@ -14,11 +14,11 @@ func Discover() ([]Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildSessions(panes, gitBranch), nil
+	return buildSessions(panes, gitBranch, gitRoot), nil
 }
 
-// buildSessions converts tmux panes to Sessions using the provided branch lookup function.
-func buildSessions(panes []tmux.Pane, branchFn func(string) string) []Session {
+// buildSessions converts tmux panes to Sessions using the provided lookup functions.
+func buildSessions(panes []tmux.Pane, branchFn func(string) string, rootFn func(string) string) []Session {
 	var sessions []Session
 	for _, p := range panes {
 		if !tmux.IsClaudePane(p.CurrentCmd) {
@@ -34,6 +34,7 @@ func buildSessions(panes []tmux.Pane, branchFn func(string) string) []Session {
 			UpdatedAt:   time.Now(),
 		}
 		s.GitBranch = branchFn(p.CurrentPath)
+		s.GitRoot = rootFn(p.CurrentPath)
 		sessions = append(sessions, s)
 	}
 	return sessions
@@ -50,4 +51,14 @@ func gitBranch(dir string) string {
 		return "" // detached HEAD
 	}
 	return branch
+}
+
+// gitRoot returns the absolute path to the git repository root for the given
+// directory, or empty string if the directory is not inside a git repository.
+func gitRoot(dir string) string {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

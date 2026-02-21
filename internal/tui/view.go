@@ -35,6 +35,11 @@ func (m Model) View() string {
 		return m.renderRenameOverlay()
 	}
 
+	// If in group-set mode, show the group overlay
+	if m.groupSetMode {
+		return m.renderGroupSetOverlay()
+	}
+
 	header := m.renderHeader()
 	outputHeader := m.renderOutputHeader()
 
@@ -156,7 +161,8 @@ func (m Model) renderOutputHeader() string {
 func (m Model) renderSessionList() string {
 	var sb strings.Builder
 
-	// Show filter input if in filter mode or filter is active
+	// Show filter input if in filter mode or filter is active.
+	// When filtering, fall back to a flat (ungrouped) list for simplicity.
 	if m.filterMode || m.isFiltered() {
 		filterStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F59E0B")).
@@ -166,30 +172,41 @@ func (m Model) renderSessionList() string {
 		} else {
 			sb.WriteString(filterStyle.Render("/" + m.filterQuery) + "\n")
 		}
+
+		sessions := m.filteredSessions()
+		if len(sessions) == 0 {
+			sb.WriteString(styleSessionMeta.Render("no matches"))
+			return sb.String()
+		}
+
+		indices := m.filtered
+		if indices == nil {
+			indices = make([]int, len(m.sessions))
+			for i := range m.sessions {
+				indices[i] = i
+			}
+		}
+		for i, s := range sessions {
+			actualIdx := indices[i]
+			sb.WriteString(m.renderSessionItem(actualIdx, s) + "\n")
+		}
+		return strings.TrimSuffix(sb.String(), "\n")
 	}
 
-	sessions := m.filteredSessions()
-	if len(sessions) == 0 {
-		if m.isFiltered() {
-			sb.WriteString(styleSessionMeta.Render("no matches"))
-		} else {
-			sb.WriteString(styleSessionMeta.Render("no claude sessions\nfound in tmux"))
-		}
+	// Grouped view.
+	items := m.buildViewItems()
+	if len(items) == 0 {
+		sb.WriteString(styleSessionMeta.Render("no claude sessions\nfound in tmux"))
 		return sb.String()
 	}
 
-	// Get the actual indices for selected highlighting
-	indices := m.filtered
-	if indices == nil {
-		indices = make([]int, len(m.sessions))
-		for i := range m.sessions {
-			indices[i] = i
+	for _, item := range items {
+		if item.isHeader {
+			isSelected := m.cursorOnGroup == item.groupKey
+			sb.WriteString(m.renderGroupHeader(item, isSelected) + "\n")
+		} else {
+			sb.WriteString(m.renderSessionItem(item.sessionIdx, m.sessions[item.sessionIdx]) + "\n")
 		}
-	}
-
-	for i, s := range sessions {
-		actualIdx := indices[i]
-		sb.WriteString(m.renderSessionItem(actualIdx, s) + "\n")
 	}
 	return strings.TrimSuffix(sb.String(), "\n")
 }
@@ -226,6 +243,21 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 		Render(meta)
 
 	return nameLine + "\n" + metaLine
+}
+
+func (m Model) renderGroupHeader(item viewItem, selected bool) string {
+	arrow := "▼"
+	if m.collapsedGroups[item.groupKey] {
+		arrow = "▶"
+	}
+	dot := stateIcon(item.aggState.String())
+	label := fmt.Sprintf("%s %s (%d)  %s", arrow, item.groupName, item.count, dot)
+
+	style := styleGroupHeader
+	if selected {
+		style = styleGroupHeaderSelected
+	}
+	return style.Width(sessionPaneWidth - 1).Render(label)
 }
 
 func sessionMeta(s session.Session) string {
@@ -276,6 +308,27 @@ func (m Model) renderRenameOverlay() string {
 	return sb.String()
 }
 
+func (m Model) renderGroupSetOverlay() string {
+	titleStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("#7C3AED")).
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Bold(true).
+		Padding(0, 1)
+	inputStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7C3AED")).
+		Padding(0, 1)
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6B7280")).
+		PaddingLeft(1)
+
+	var sb strings.Builder
+	sb.WriteString(titleStyle.Width(m.width).Render("Set Group") + "\n\n")
+	sb.WriteString(inputStyle.Render(m.groupSetInput.View()) + "\n\n")
+	sb.WriteString(helpStyle.Render("[enter] save  [esc] cancel  (empty to use auto-detected group)"))
+	return sb.String()
+}
+
 func (m Model) renderHelp() string {
 	if m.insertMode {
 		return styleHelpInsert.Width(m.width).Render("INSERT  [ctrl+h] exit")
@@ -288,6 +341,8 @@ func (m Model) renderHelp() string {
 		"[J/K] move",
 		"[p] pin",
 		"[e] rename",
+		"[space] collapse",
+		"[g] group",
 		"[/] filter",
 		"[i] insert",
 		"[t] jump",
