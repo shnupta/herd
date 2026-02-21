@@ -10,4 +10,5 @@ const (
 	ModeFilter
 	ModeRename
 	ModeGroupSet
+	ModeWorktree
 )
