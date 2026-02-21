@@ -1,6 +1,9 @@
 package session
 
-import "time"
+import (
+	"path/filepath"
+	"time"
+)
 
 // State represents the current activity state of a Claude session.
 type State int
@@ -66,11 +69,12 @@ func (s Session) DisplayName() string {
 		return s.TmuxPane
 	}
 	// Use the last two path components for context, e.g. "dev/porter"
-	parts := splitPath(s.ProjectPath)
-	if len(parts) >= 2 {
-		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+	base := filepath.Base(s.ProjectPath)
+	parent := filepath.Base(filepath.Dir(s.ProjectPath))
+	if parent != "" && parent != "." && parent != "/" {
+		return parent + "/" + base
 	}
-	return parts[len(parts)-1]
+	return base
 }
 
 // IdleFor returns how long the session has been in its current state.
@@ -81,24 +85,21 @@ func (s Session) IdleFor() time.Duration {
 	return time.Since(s.UpdatedAt)
 }
 
-func splitPath(p string) []string {
-	var parts []string
-	for {
-		dir, file := "", p
-		for i := len(p) - 1; i >= 0; i-- {
-			if p[i] == '/' {
-				dir = p[:i]
-				file = p[i+1:]
-				break
-			}
-		}
-		if file != "" {
-			parts = append([]string{file}, parts...)
-		}
-		if dir == "" {
-			break
-		}
-		p = dir
+// ParseState parses a hook-written state string into a State value.
+func ParseState(s string) State {
+	switch s {
+	case "working":
+		return StateWorking
+	case "waiting":
+		return StateWaiting
+	case "plan_ready":
+		return StatePlanReady
+	case "notifying":
+		return StateNotifying
+	case "idle":
+		return StateIdle
+	default:
+		return StateUnknown
 	}
-	return parts
 }
+
