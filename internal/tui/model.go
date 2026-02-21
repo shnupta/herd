@@ -108,7 +108,7 @@ type Model struct {
 
 	// State
 	spinner     spinner.Model
-	stateWatcher *state.Watcher
+	stateWatcher state.WatcherIface
 	err         error
 	ready       bool
 
@@ -123,7 +123,7 @@ const (
 )
 
 // New returns an initialised Model.
-func New(w *state.Watcher, tc tmux.ClientIface) Model {
+func New(w state.WatcherIface, tc tmux.ClientIface) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
@@ -226,12 +226,12 @@ func (m Model) pendingDiscoveryTick() tea.Cmd {
 }
 
 // waitForStateEvent waits for the next state file event from fsnotify.
-func waitForStateEvent(w *state.Watcher) tea.Cmd {
+func waitForStateEvent(w state.WatcherIface) tea.Cmd {
 	if w == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		ev, ok := <-w.Events
+		ev, ok := <-w.Events()
 		if !ok {
 			return nil
 		}
