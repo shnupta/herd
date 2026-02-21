@@ -40,9 +40,13 @@ func (m Model) View() string {
 		return m.renderGroupSetOverlay()
 	}
 
-	// No sessions — show landing page instead of the normal split layout.
+	// No sessions — show landing page with the normal header/help chrome.
 	if len(m.sessions) == 0 {
-		return m.renderLandingPage()
+		return lipgloss.JoinVertical(lipgloss.Left,
+			m.renderHeader(),
+			m.renderLandingPage(),
+			m.renderHelp(),
+		)
 	}
 
 	header := m.renderHeader()
@@ -303,21 +307,17 @@ func (m Model) renderLandingPage() string {
 	hintStyle := lipgloss.NewStyle().
 		Foreground(colText)
 
-	keyStyle := lipgloss.NewStyle().
-		Foreground(colAccent)
-
 	body := lipgloss.JoinVertical(lipgloss.Center,
 		titleStyle.Render("herd"),
 		"",
 		subtextStyle.Render("no Claude sessions found in tmux"),
 		"",
 		hintStyle.Render("open Claude Code in a tmux pane to get started"),
-		subtextStyle.Render("or press "+keyStyle.Render("[n]")+" to launch a new session"),
 	)
 
 	page := lipgloss.NewStyle().
 		Width(m.width).
-		Height(m.height).
+		Height(m.height - 2). // total - header(1) - help(1)
 		Align(lipgloss.Center, lipgloss.Center).
 		Render(body)
 
