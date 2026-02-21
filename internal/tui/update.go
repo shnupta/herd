@@ -342,6 +342,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if sel := m.selectedSession(); sel != nil {
 				if err := forwardKey(sel.TmuxPane, msg); err != nil {
 					m.err = err
+					m.insertMode = false
 				} else {
 					cmds = append(cmds, fetchCapture(sel.TmuxPane))
 				}
@@ -644,6 +645,9 @@ func forwardKey(paneID string, msg tea.KeyMsg) error {
 		return tmux.SendKeyName(paneID, name)
 	}
 	if msg.Type == tea.KeyRunes {
+		if len(msg.Runes) == 0 {
+			return nil
+		}
 		return tmux.SendLiteral(paneID, string(msg.Runes))
 	}
 	return nil
