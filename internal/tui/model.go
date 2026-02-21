@@ -2,7 +2,6 @@ package tui
 
 import (
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -317,20 +316,14 @@ func (m *Model) saveSidebarState() {
 
 // ── Group helpers ──────────────────────────────────────────────────────────
 
-// groupKeyAndName returns the group key (for collapse map) and human-readable
-// name for the given session. Custom overrides via groupsStore take precedence,
-// then git root, then project path, then pane ID as last resort.
+// groupKeyAndName returns the group key and human-readable name for a session.
+// Returns ("", "") when the session has no explicit group assignment, meaning
+// it should appear as a flat item with no header in the sidebar.
 func (m *Model) groupKeyAndName(s session.Session) (key, name string) {
 	if custom := m.groupsStore.Get(s.Key()); custom != "" {
 		return "custom:" + custom, custom
 	}
-	if s.GitRoot != "" {
-		return s.GitRoot, filepath.Base(s.GitRoot)
-	}
-	if s.ProjectPath != "" {
-		return s.ProjectPath, filepath.Base(s.ProjectPath)
-	}
-	return s.TmuxPane, s.TmuxPane
+	return "", "" // no explicit group — render flat
 }
 
 // worstState returns the highest-priority state from the provided slice.
@@ -354,63 +347,70 @@ func worstState(states []session.State) session.State {
 }
 
 // buildViewItems builds the ordered list of renderable/navigable sidebar rows.
-// When a filter is active the session list is flat (no groups); otherwise
-// sessions are grouped and headers are inserted at group boundaries.
+// Sessions without an explicit group assignment appear as flat items with no
+// header. Sessions in an explicit group are gathered under a named header,
+// inserted at the position of the group's first session in m.sessions order.
 // Collapsed groups contribute only their header row.
 func (m *Model) buildViewItems() []viewItem {
 	if len(m.sessions) == 0 {
 		return nil
 	}
 
+	// Pre-compute per-group aggregate data (count, states) so we can render
+	// headers correctly when we encounter the first session of each group.
 	type groupData struct {
-		key      string
 		name     string
 		sessions []int // indices into m.sessions
 	}
-
-	var groupOrder []string
 	groupMap := make(map[string]*groupData)
-
 	for i, s := range m.sessions {
 		gKey, gName := m.groupKeyAndName(s)
+		if gKey == "" {
+			continue // ungrouped — no aggregate needed
+		}
 		if _, exists := groupMap[gKey]; !exists {
-			groupOrder = append(groupOrder, gKey)
-			groupMap[gKey] = &groupData{key: gKey, name: gName}
+			groupMap[gKey] = &groupData{name: gName}
 		}
 		groupMap[gKey].sessions = append(groupMap[gKey].sessions, i)
 	}
 
-	// Only show group headers when there are multiple distinct groups,
-	// or when a single group is collapsed (so the user can expand it).
-	showHeaders := len(groupOrder) > 1
-
+	emittedHeaders := make(map[string]bool)
 	var items []viewItem
-	for _, gKey := range groupOrder {
-		g := groupMap[gKey]
-		var states []session.State
-		for _, idx := range g.sessions {
-			states = append(states, m.sessions[idx].State)
+
+	for i, s := range m.sessions {
+		gKey, _ := m.groupKeyAndName(s)
+
+		if gKey == "" {
+			// Ungrouped session — flat item, no header.
+			items = append(items, viewItem{
+				isHeader:   false,
+				sessionIdx: i,
+			})
+			continue
 		}
-		collapsed := m.collapsedGroups[g.key]
-		// Show this group's header if: multiple groups exist, OR this single
-		// group is collapsed (must be shown so the user can expand it).
-		if showHeaders || collapsed {
+
+		// Explicitly grouped session — emit the group header once, then the session.
+		if !emittedHeaders[gKey] {
+			emittedHeaders[gKey] = true
+			g := groupMap[gKey]
+			var states []session.State
+			for _, idx := range g.sessions {
+				states = append(states, m.sessions[idx].State)
+			}
 			items = append(items, viewItem{
 				isHeader:  true,
-				groupKey:  g.key,
+				groupKey:  gKey,
 				groupName: g.name,
 				count:     len(g.sessions),
 				aggState:  worstState(states),
 			})
 		}
-		if !collapsed {
-			for _, idx := range g.sessions {
-				items = append(items, viewItem{
-					isHeader:   false,
-					groupKey:   g.key,
-					sessionIdx: idx,
-				})
-			}
+		if !m.collapsedGroups[gKey] {
+			items = append(items, viewItem{
+				isHeader:   false,
+				groupKey:   gKey,
+				sessionIdx: i,
+			})
 		}
 	}
 	return items
@@ -514,10 +514,12 @@ func (m *Model) toggleGroupAtCursor() {
 		}
 		return
 	}
-	// Cursor is on a session — collapse its group.
+	// Cursor is on a session — collapse its group (only if it has one).
 	if m.selected < len(m.sessions) {
 		gKey, _ := m.groupKeyAndName(m.sessions[m.selected])
-		m.collapsedGroups[gKey] = !m.collapsedGroups[gKey]
+		if gKey != "" {
+			m.collapsedGroups[gKey] = !m.collapsedGroups[gKey]
+		}
 	}
 }
 
