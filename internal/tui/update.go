@@ -567,6 +567,7 @@ var tmuxKeyNames = map[string]string{
 	"pgup":      "PPage",
 	"pgdown":    "NPage",
 	"esc":       "Escape",
+	" ":         "Space",
 	"ctrl+a":    "C-a",
 	"ctrl+b":    "C-b",
 	"ctrl+c":    "C-c",
