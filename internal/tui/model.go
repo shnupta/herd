@@ -370,7 +370,10 @@ func (m *Model) viewItems() []viewItem {
 // Sessions without an explicit group assignment appear as flat items with no
 // header. Sessions in an explicit group are gathered under a named header,
 // inserted at the position of the group's first session in m.sessions order.
-// Collapsed groups contribute only their header row.
+// All members of a group are emitted contiguously at the first-member's
+// position regardless of where the other members sit in m.sessions, so that
+// a newly-grouped session never appears visually interleaved with ungrouped
+// sessions. Collapsed groups contribute only their header row.
 func (m *Model) buildViewItems() []viewItem {
 	if len(m.sessions) == 0 {
 		return nil
@@ -380,7 +383,7 @@ func (m *Model) buildViewItems() []viewItem {
 	// headers correctly when we encounter the first session of each group.
 	type groupData struct {
 		name     string
-		sessions []int // indices into m.sessions
+		sessions []int // indices into m.sessions, in m.sessions order
 	}
 	groupMap := make(map[string]*groupData)
 	for i, s := range m.sessions {
@@ -394,7 +397,7 @@ func (m *Model) buildViewItems() []viewItem {
 		groupMap[gKey].sessions = append(groupMap[gKey].sessions, i)
 	}
 
-	emittedHeaders := make(map[string]bool)
+	emittedGroups := make(map[string]bool)
 	var items []viewItem
 
 	for i, s := range m.sessions {
@@ -409,28 +412,33 @@ func (m *Model) buildViewItems() []viewItem {
 			continue
 		}
 
-		// Explicitly grouped session — emit the group header once, then the session.
-		if !emittedHeaders[gKey] {
-			emittedHeaders[gKey] = true
-			g := groupMap[gKey]
-			var states []session.State
-			for _, idx := range g.sessions {
-				states = append(states, m.sessions[idx].State)
-			}
-			items = append(items, viewItem{
-				isHeader:  true,
-				groupKey:  gKey,
-				groupName: g.name,
-				count:     len(g.sessions),
-				aggState:  worstState(states),
-			})
+		// Already emitted all members of this group at the position of the
+		// first member — skip subsequent encounters.
+		if emittedGroups[gKey] {
+			continue
 		}
+		emittedGroups[gKey] = true
+
+		g := groupMap[gKey]
+		var states []session.State
+		for _, idx := range g.sessions {
+			states = append(states, m.sessions[idx].State)
+		}
+		items = append(items, viewItem{
+			isHeader:  true,
+			groupKey:  gKey,
+			groupName: g.name,
+			count:     len(g.sessions),
+			aggState:  worstState(states),
+		})
 		if !m.collapsedGroups[gKey] {
-			items = append(items, viewItem{
-				isHeader:   false,
-				groupKey:   gKey,
-				sessionIdx: i,
-			})
+			for _, idx := range g.sessions {
+				items = append(items, viewItem{
+					isHeader:   false,
+					groupKey:   gKey,
+					sessionIdx: idx,
+				})
+			}
 		}
 	}
 	return items
