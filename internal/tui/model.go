@@ -269,8 +269,9 @@ func (m *Model) sortSessions() {
 		}
 	}
 
-	// Sort pinned sessions by their pin order
-	sort.Slice(pinned, func(i, j int) bool {
+	// Sort pinned sessions by their pin order (stable so group members with
+	// sequential counters remain adjacent after within-group reorders).
+	sort.SliceStable(pinned, func(i, j int) bool {
 		return m.pinned[pinned[i].Key()] < m.pinned[pinned[j].Key()]
 	})
 
@@ -539,6 +540,116 @@ func (m *Model) toggleGroupAtCursor() {
 		if gKey != "" {
 			m.collapsedGroups[gKey] = !m.collapsedGroups[gKey]
 		}
+	}
+}
+
+// sessionGroupKey returns the group key for the session at index idx, or ""
+// when the session is ungrouped or idx is out of range.
+func (m *Model) sessionGroupKey(idx int) string {
+	if idx < 0 || idx >= len(m.sessions) {
+		return ""
+	}
+	gKey, _ := m.groupKeyAndName(m.sessions[idx])
+	return gKey
+}
+
+// swapSessions exchanges sessions at indices i and j in m.sessions.
+// When both sessions carry individual pin orders, those orders are swapped
+// so the visual pin positions are preserved.
+func (m *Model) swapSessions(i, j int) {
+	m.sessions[i], m.sessions[j] = m.sessions[j], m.sessions[i]
+	ki, kj := m.sessions[i].Key(), m.sessions[j].Key()
+	if oi, oki := m.pinned[ki]; oki {
+		if oj, okj := m.pinned[kj]; okj {
+			m.pinned[ki], m.pinned[kj] = oj, oi
+		}
+	}
+}
+
+// moveSessionDown moves the selected session one step down in m.sessions
+// while honouring group boundaries:
+//
+//   - An ungrouped session skips over an adjacent group block entirely
+//     (it cannot enter a group).
+//   - A grouped session swaps with the next member of the same group.
+//   - A grouped session at its group's lower boundary does not move.
+//
+// Returns (true, newIndex) when a move occurred, (false, 0) otherwise.
+func (m *Model) moveSessionDown() (bool, int) {
+	cur := m.selected
+	n := len(m.sessions)
+	if cur >= n-1 {
+		return false, 0
+	}
+
+	curGroup := m.sessionGroupKey(cur)
+	nextGroup := m.sessionGroupKey(cur + 1)
+
+	switch {
+	case curGroup == "" && nextGroup == "":
+		// Both ungrouped — simple adjacent swap.
+		m.swapSessions(cur, cur+1)
+		return true, cur + 1
+
+	case curGroup == "" && nextGroup != "":
+		// Ungrouped session next to a group — skip the whole contiguous block.
+		j := cur + 1
+		for j+1 < n && m.sessionGroupKey(j+1) == nextGroup {
+			j++
+		}
+		// Left-rotate sessions[cur..j]: cur moves to j, rest shift left by one.
+		moving := m.sessions[cur]
+		copy(m.sessions[cur:j+1], m.sessions[cur+1:j+1])
+		m.sessions[j] = moving
+		return true, j
+
+	case curGroup != "" && nextGroup == curGroup:
+		// Same group — swap within the group.
+		m.swapSessions(cur, cur+1)
+		return true, cur + 1
+
+	default:
+		// Grouped session at boundary, or two different groups — no move.
+		return false, 0
+	}
+}
+
+// moveSessionUp is the mirror of moveSessionDown.
+func (m *Model) moveSessionUp() (bool, int) {
+	cur := m.selected
+	if cur == 0 {
+		return false, 0
+	}
+
+	curGroup := m.sessionGroupKey(cur)
+	prevGroup := m.sessionGroupKey(cur - 1)
+
+	switch {
+	case curGroup == "" && prevGroup == "":
+		// Both ungrouped — simple adjacent swap.
+		m.swapSessions(cur, cur-1)
+		return true, cur - 1
+
+	case curGroup == "" && prevGroup != "":
+		// Ungrouped session next to a group — skip the whole contiguous block.
+		k := cur - 1
+		for k-1 >= 0 && m.sessionGroupKey(k-1) == prevGroup {
+			k--
+		}
+		// Right-rotate sessions[k..cur]: cur moves to k, rest shift right by one.
+		moving := m.sessions[cur]
+		copy(m.sessions[k+1:cur+1], m.sessions[k:cur])
+		m.sessions[k] = moving
+		return true, k
+
+	case curGroup != "" && prevGroup == curGroup:
+		// Same group — swap within the group.
+		m.swapSessions(cur, cur-1)
+		return true, cur - 1
+
+	default:
+		// Grouped session at boundary, or two different groups — no move.
+		return false, 0
 	}
 }
 

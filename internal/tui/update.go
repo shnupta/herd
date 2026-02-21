@@ -496,11 +496,33 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.Pin):
 			if sel := m.selectedSession(); sel != nil {
-				if _, isPinned := m.pinned[sel.Key()]; isPinned {
-					delete(m.pinned, sel.Key())
+				gKey, _ := m.groupKeyAndName(*sel)
+				if gKey != "" {
+					// Pin or unpin the entire group as a unit so the group
+					// moves to the top (or back) together.
+					_, isCurrentlyPinned := m.pinned[sel.Key()]
+					if isCurrentlyPinned {
+						for _, s := range m.sessions {
+							if k, _ := m.groupKeyAndName(s); k == gKey {
+								delete(m.pinned, s.Key())
+							}
+						}
+					} else {
+						m.pinCounter++
+						for _, s := range m.sessions {
+							if k, _ := m.groupKeyAndName(s); k == gKey {
+								m.pinned[s.Key()] = m.pinCounter
+							}
+						}
+					}
 				} else {
-					m.pinCounter++
-					m.pinned[sel.Key()] = m.pinCounter
+					// Ungrouped session — pin individually.
+					if _, isPinned := m.pinned[sel.Key()]; isPinned {
+						delete(m.pinned, sel.Key())
+					} else {
+						m.pinCounter++
+						m.pinned[sel.Key()] = m.pinCounter
+					}
 				}
 				m.sortSessions()
 				m.saveSidebarState()
@@ -508,15 +530,8 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, keys.MoveUp):
-			if m.selected > 0 {
-				m.sessions[m.selected], m.sessions[m.selected-1] = m.sessions[m.selected-1], m.sessions[m.selected]
-				key1, key2 := m.sessions[m.selected].Key(), m.sessions[m.selected-1].Key()
-				if order1, ok1 := m.pinned[key1]; ok1 {
-					if order2, ok2 := m.pinned[key2]; ok2 {
-						m.pinned[key1], m.pinned[key2] = order2, order1
-					}
-				}
-				m.selected--
+			if moved, newSel := m.moveSessionUp(); moved {
+				m.selected = newSel
 				var cmd tea.Cmd
 				m, cmd = selectSession(m)
 				cmds = append(cmds, cmd)
@@ -526,15 +541,8 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, keys.MoveDown):
-			if m.selected < len(m.sessions)-1 {
-				m.sessions[m.selected], m.sessions[m.selected+1] = m.sessions[m.selected+1], m.sessions[m.selected]
-				key1, key2 := m.sessions[m.selected].Key(), m.sessions[m.selected+1].Key()
-				if order1, ok1 := m.pinned[key1]; ok1 {
-					if order2, ok2 := m.pinned[key2]; ok2 {
-						m.pinned[key1], m.pinned[key2] = order2, order1
-					}
-				}
-				m.selected++
+			if moved, newSel := m.moveSessionDown(); moved {
+				m.selected = newSel
 				var cmd tea.Cmd
 				m, cmd = selectSession(m)
 				cmds = append(cmds, cmd)
