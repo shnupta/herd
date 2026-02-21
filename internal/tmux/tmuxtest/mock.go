@@ -1,9 +1,13 @@
-package tmux
+// Package tmuxtest provides test doubles for the tmux package.
+// Import this package only from _test.go files.
+package tmuxtest
 
-// MockClient is a test double for ClientIface.
+import "github.com/shnupta/herd/internal/tmux"
+
+// MockClient is a test double for tmux.ClientIface.
 // Set fields before calling methods to control return values.
 type MockClient struct {
-	Panes        []Pane
+	Panes        []tmux.Pane
 	ListPanesErr error
 
 	CaptureOutput string
@@ -51,10 +55,10 @@ type MockClient struct {
 	SwitchedPanes    []string
 }
 
-// Compile-time check that MockClient satisfies ClientIface.
-var _ ClientIface = (*MockClient)(nil)
+// Compile-time check that MockClient satisfies tmux.ClientIface.
+var _ tmux.ClientIface = (*MockClient)(nil)
 
-func (m *MockClient) ListPanes() ([]Pane, error) {
+func (m *MockClient) ListPanes() ([]tmux.Pane, error) {
 	return m.Panes, m.ListPanesErr
 }
 

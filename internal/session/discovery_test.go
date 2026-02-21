@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/shnupta/herd/internal/tmux"
+	"github.com/shnupta/herd/internal/tmux/tmuxtest"
 )
 
 func noBranch(string) string { return "" }
@@ -265,7 +266,7 @@ func TestGitRootNonexistentDir(t *testing.T) {
 // --- Discover() tests using MockClient ---
 
 func TestDiscoverListPanesError(t *testing.T) {
-	mock := &tmux.MockClient{
+	mock := &tmuxtest.MockClient{
 		ListPanesErr: errors.New("tmux not running"),
 	}
 	sessions, err := Discover(mock)
@@ -278,7 +279,7 @@ func TestDiscoverListPanesError(t *testing.T) {
 }
 
 func TestDiscoverEmptyPanes(t *testing.T) {
-	mock := &tmux.MockClient{}
+	mock := &tmuxtest.MockClient{}
 	sessions, err := Discover(mock)
 	if err != nil {
 		t.Fatalf("Discover returned unexpected error: %v", err)
@@ -289,7 +290,7 @@ func TestDiscoverEmptyPanes(t *testing.T) {
 }
 
 func TestDiscoverFiltersClaude(t *testing.T) {
-	mock := &tmux.MockClient{
+	mock := &tmuxtest.MockClient{
 		Panes: []tmux.Pane{
 			{ID: "%1", CurrentCmd: "bash", CurrentPath: "/home"},
 			{ID: "%2", CurrentCmd: "2.1.47", CurrentPath: "/project/a"},
@@ -316,7 +317,7 @@ func TestDiscoverFiltersClaude(t *testing.T) {
 func TestDiscoverPopulatesSessionFields(t *testing.T) {
 	dir := initTestRepo(t)
 
-	mock := &tmux.MockClient{
+	mock := &tmuxtest.MockClient{
 		Panes: []tmux.Pane{
 			{
 				ID:          "%7",
@@ -368,7 +369,7 @@ func TestDiscoverPopulatesSessionFields(t *testing.T) {
 func TestDiscoverNonGitPath(t *testing.T) {
 	dir := t.TempDir() // not a git repo
 
-	mock := &tmux.MockClient{
+	mock := &tmuxtest.MockClient{
 		Panes: []tmux.Pane{
 			{ID: "%9", CurrentCmd: "3.0.0", CurrentPath: dir},
 		},
@@ -394,7 +395,7 @@ func TestDiscoverBranchCaching(t *testing.T) {
 	// get the same branch value from a real repo.
 	dir := initTestRepo(t)
 
-	mock := &tmux.MockClient{
+	mock := &tmuxtest.MockClient{
 		Panes: []tmux.Pane{
 			{ID: "%1", CurrentCmd: "claude", CurrentPath: dir},
 			{ID: "%2", CurrentCmd: "2.0.0", CurrentPath: dir},
