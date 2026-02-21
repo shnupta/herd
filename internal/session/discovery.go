@@ -14,7 +14,29 @@ func Discover() ([]Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildSessions(panes, gitBranch, gitRoot), nil
+
+	// Per-call caches so panes in the same directory don't spawn redundant git processes.
+	branchCache := make(map[string]string)
+	rootCache := make(map[string]string)
+
+	cachedBranch := func(dir string) string {
+		if v, ok := branchCache[dir]; ok {
+			return v
+		}
+		v := gitBranch(dir)
+		branchCache[dir] = v
+		return v
+	}
+	cachedRoot := func(dir string) string {
+		if v, ok := rootCache[dir]; ok {
+			return v
+		}
+		v := gitRoot(dir)
+		rootCache[dir] = v
+		return v
+	}
+
+	return buildSessions(panes, cachedBranch, cachedRoot), nil
 }
 
 // buildSessions converts tmux panes to Sessions using the provided lookup functions.

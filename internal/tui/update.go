@@ -132,6 +132,7 @@ func (m Model) updateFilterMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = ModeNormal
 				m.filterQuery = ""
 				m.filtered = nil
+				m.itemsDirty = true
 				return m, nil
 			}
 		}
@@ -163,6 +164,7 @@ func (m Model) updateRenameMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = ModeNormal
 			m.renameInput.Reset()
 			m.renameKey = ""
+			m.itemsDirty = true
 			return m, nil
 		}
 	}
@@ -310,6 +312,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// ── Hook state update ──────────────────────────────────────────────────
 	case stateUpdateMsg:
 		m = m.applyStates([]state.SessionState{state.SessionState(msg)})
+		m.itemsDirty = true
 		cmds = append(cmds, waitForStateEvent(m.stateWatcher))
 
 	// ── Spinner ────────────────────────────────────────────────────────────
@@ -391,6 +394,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selected >= len(m.sessions) {
 						m.selected = maxInt(0, len(m.sessions)-1)
 					}
+					m.itemsDirty = true
 					var cmd tea.Cmd
 					m, cmd = selectSession(m)
 					cmds = append(cmds, cmd)
@@ -446,6 +450,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Filter):
 			m.mode = ModeFilter
 			m.filterInput.Focus()
+			m.itemsDirty = true
 
 		case key.Matches(msg, keys.Rename):
 			if sel := m.selectedSession(); sel != nil {
@@ -457,6 +462,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.ToggleGroup):
 			m.toggleGroupAtCursor()
+			m.itemsDirty = true
 
 		case key.Matches(msg, keys.SetGroup):
 			if m.cursorOnGroup == "" {
@@ -479,6 +485,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.sortSessions()
 				m.saveSidebarState()
+				m.itemsDirty = true
 			}
 
 		case key.Matches(msg, keys.MoveUp):
@@ -491,10 +498,11 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.selected--
-				var cmd tea.Cmd
-				m, cmd = selectSession(m)
-				cmds = append(cmds, cmd)
+			var cmd tea.Cmd
+			m, cmd = selectSession(m)
+			cmds = append(cmds, cmd)
 				m.saveSidebarState()
+				m.itemsDirty = true
 			}
 
 		case key.Matches(msg, keys.MoveDown):
@@ -507,10 +515,11 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.selected++
-				var cmd tea.Cmd
-				m, cmd = selectSession(m)
-				cmds = append(cmds, cmd)
+			var cmd tea.Cmd
+			m, cmd = selectSession(m)
+			cmds = append(cmds, cmd)
 				m.saveSidebarState()
+				m.itemsDirty = true
 			}
 		}
 
@@ -744,7 +753,7 @@ func (m *Model) sessionIndexAtY(y int) (int, string) {
 
 	// Walk viewItems to find the item at the clicked row.
 	// Group headers occupy 1 row; session items occupy 2 rows.
-	items := m.buildViewItems()
+	items := m.viewItems()
 	row := 0
 	for _, item := range items {
 		if item.isHeader {

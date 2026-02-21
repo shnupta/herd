@@ -204,7 +204,7 @@ func (m Model) renderSessionList() string {
 	}
 
 	// Grouped view.
-	items := m.buildViewItems()
+	items := m.viewItems()
 	if len(items) == 0 {
 		sb.WriteString(styleSessionMeta.Render("no claude sessions\nfound in tmux"))
 		return sb.String()
