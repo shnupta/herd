@@ -62,27 +62,25 @@ type Model struct {
 	// Input
 	insertMode bool // true when keystrokes are forwarded to the selected pane
 
-	// Filter mode
-	filterMode   bool               // true when filtering session list
+	// Modal state
+	mode Mode // current input mode (ModeNormal, ModeReview, etc.)
+
+	// Filter
 	filterInput  textinput.Model    // text input for filter
 	filterQuery  string             // current filter query
 	filtered     []int              // indices of sessions that match filter
 
-	// Diff review mode
-	reviewMode  bool         // true when in diff review mode
+	// Diff review
 	reviewModel *ReviewModel // the review sub-model
 
-	// Project picker mode
-	pickerMode  bool         // true when in project picker mode
+	// Project picker
 	pickerModel *PickerModel // the picker sub-model
 
-	// Rename mode
-	renameMode  bool             // true when the rename overlay is open
+	// Rename
 	renameInput textinput.Model  // text input for the rename overlay
 	renameKey   string           // session key being renamed
 
-	// Group-set mode
-	groupSetMode  bool            // true when the group-assign overlay is open
+	// Group-set
 	groupSetInput textinput.Model // text input for the group name
 	groupSetKey   string          // session key being re-grouped
 
