@@ -50,6 +50,7 @@ func LoadFrom(path string) Config {
 	if len(loaded.ProjectDirs) > 0 {
 		cfg.ProjectDirs = loaded.ProjectDirs
 	}
+	cfg.DangerouslySkipPermissions = loaded.DangerouslySkipPermissions
 
 	return cfg
 }
