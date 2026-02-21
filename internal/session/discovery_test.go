@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -258,5 +259,158 @@ func TestGitRootNonexistentDir(t *testing.T) {
 	root := gitRoot("/nonexistent/path/unlikely/to/exist")
 	if root != "" {
 		t.Errorf("gitRoot on nonexistent dir = %q, want empty", root)
+	}
+}
+
+// --- Discover() tests using MockClient ---
+
+func TestDiscoverListPanesError(t *testing.T) {
+	mock := &tmux.MockClient{
+		ListPanesErr: errors.New("tmux not running"),
+	}
+	sessions, err := Discover(mock)
+	if err == nil {
+		t.Fatal("Discover should return error when ListPanes fails")
+	}
+	if sessions != nil {
+		t.Errorf("Discover returned %d sessions, want nil", len(sessions))
+	}
+}
+
+func TestDiscoverEmptyPanes(t *testing.T) {
+	mock := &tmux.MockClient{}
+	sessions, err := Discover(mock)
+	if err != nil {
+		t.Fatalf("Discover returned unexpected error: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("Discover returned %d sessions, want 0", len(sessions))
+	}
+}
+
+func TestDiscoverFiltersClaude(t *testing.T) {
+	mock := &tmux.MockClient{
+		Panes: []tmux.Pane{
+			{ID: "%1", CurrentCmd: "bash", CurrentPath: "/home"},
+			{ID: "%2", CurrentCmd: "2.1.47", CurrentPath: "/project/a"},
+			{ID: "%3", CurrentCmd: "vim", CurrentPath: "/home"},
+			{ID: "%4", CurrentCmd: "claude", CurrentPath: "/project/b"},
+			{ID: "%5", CurrentCmd: "zsh", CurrentPath: "/home"},
+		},
+	}
+	sessions, err := Discover(mock)
+	if err != nil {
+		t.Fatalf("Discover returned unexpected error: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("Discover returned %d sessions, want 2", len(sessions))
+	}
+	if sessions[0].TmuxPane != "%2" {
+		t.Errorf("sessions[0].TmuxPane = %q, want %%2", sessions[0].TmuxPane)
+	}
+	if sessions[1].TmuxPane != "%4" {
+		t.Errorf("sessions[1].TmuxPane = %q, want %%4", sessions[1].TmuxPane)
+	}
+}
+
+func TestDiscoverPopulatesSessionFields(t *testing.T) {
+	dir := initTestRepo(t)
+
+	mock := &tmux.MockClient{
+		Panes: []tmux.Pane{
+			{
+				ID:          "%7",
+				SessionName: "dev",
+				WindowIndex: 3,
+				PaneIndex:   1,
+				CurrentCmd:  "claude",
+				CurrentPath: dir,
+			},
+		},
+	}
+	sessions, err := Discover(mock)
+	if err != nil {
+		t.Fatalf("Discover returned unexpected error: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("Discover returned %d sessions, want 1", len(sessions))
+	}
+	s := sessions[0]
+	if s.TmuxPane != "%7" {
+		t.Errorf("TmuxPane = %q, want %%7", s.TmuxPane)
+	}
+	if s.TmuxSession != "dev" {
+		t.Errorf("TmuxSession = %q, want dev", s.TmuxSession)
+	}
+	if s.WindowIndex != 3 {
+		t.Errorf("WindowIndex = %d, want 3", s.WindowIndex)
+	}
+	if s.PaneIndex != 1 {
+		t.Errorf("PaneIndex = %d, want 1", s.PaneIndex)
+	}
+	if s.ProjectPath != dir {
+		t.Errorf("ProjectPath = %q, want %q", s.ProjectPath, dir)
+	}
+	if s.State != StateUnknown {
+		t.Errorf("State = %v, want StateUnknown", s.State)
+	}
+	// Git branch should be non-empty since we pointed at a real repo.
+	if s.GitBranch == "" {
+		t.Error("GitBranch is empty, expected a branch name for a valid repo")
+	}
+	// Git root should resolve to the repo dir.
+	expectedRoot, _ := filepath.EvalSymlinks(dir)
+	if s.GitRoot != expectedRoot {
+		t.Errorf("GitRoot = %q, want %q", s.GitRoot, expectedRoot)
+	}
+}
+
+func TestDiscoverNonGitPath(t *testing.T) {
+	dir := t.TempDir() // not a git repo
+
+	mock := &tmux.MockClient{
+		Panes: []tmux.Pane{
+			{ID: "%9", CurrentCmd: "3.0.0", CurrentPath: dir},
+		},
+	}
+	sessions, err := Discover(mock)
+	if err != nil {
+		t.Fatalf("Discover returned unexpected error: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("Discover returned %d sessions, want 1", len(sessions))
+	}
+	if sessions[0].GitBranch != "" {
+		t.Errorf("GitBranch = %q, want empty for non-git dir", sessions[0].GitBranch)
+	}
+	if sessions[0].GitRoot != "" {
+		t.Errorf("GitRoot = %q, want empty for non-git dir", sessions[0].GitRoot)
+	}
+}
+
+func TestDiscoverBranchCaching(t *testing.T) {
+	// Two panes with the same CurrentPath should reuse cached git results.
+	// We can't directly observe the cache, but we verify both sessions
+	// get the same branch value from a real repo.
+	dir := initTestRepo(t)
+
+	mock := &tmux.MockClient{
+		Panes: []tmux.Pane{
+			{ID: "%1", CurrentCmd: "claude", CurrentPath: dir},
+			{ID: "%2", CurrentCmd: "2.0.0", CurrentPath: dir},
+		},
+	}
+	sessions, err := Discover(mock)
+	if err != nil {
+		t.Fatalf("Discover returned unexpected error: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("Discover returned %d sessions, want 2", len(sessions))
+	}
+	if sessions[0].GitBranch != sessions[1].GitBranch {
+		t.Errorf("branch mismatch: %q vs %q", sessions[0].GitBranch, sessions[1].GitBranch)
+	}
+	if sessions[0].GitRoot != sessions[1].GitRoot {
+		t.Errorf("root mismatch: %q vs %q", sessions[0].GitRoot, sessions[1].GitRoot)
 	}
 }
