@@ -1,6 +1,7 @@
 package hook
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -104,5 +105,66 @@ func TestProcessEmptySessionIDIsNoOp(t *testing.T) {
 	}
 	if called {
 		t.Error("write function should not be called when session_id is empty")
+	}
+}
+
+func TestProcessInvalidJSON(t *testing.T) {
+	err := process("UserPromptSubmit", strings.NewReader(`{not valid json}`), func(s state.SessionState) error {
+		t.Fatal("write should not be called for invalid JSON")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("process() should return error for invalid JSON")
+	}
+	if !strings.Contains(err.Error(), "decode stdin") {
+		t.Errorf("error = %q, want it to contain 'decode stdin'", err.Error())
+	}
+}
+
+func TestProcessWriteError(t *testing.T) {
+	writeErr := fmt.Errorf("disk full")
+	err := process("Stop", strings.NewReader(makeInput("sess-err", "")), func(s state.SessionState) error {
+		return writeErr
+	})
+	if err == nil {
+		t.Fatal("process() should propagate write error")
+	}
+	if err != writeErr {
+		t.Errorf("error = %v, want %v", err, writeErr)
+	}
+}
+
+func TestProcessSetsProjectPath(t *testing.T) {
+	got := captureWrite(t, "UserPromptSubmit", makeInput("sess-cwd", ""))
+	if got.ProjectPath == "" {
+		t.Error("ProjectPath should be set to current working directory")
+	}
+}
+
+func TestProcessSetsUpdatedAt(t *testing.T) {
+	got := captureWrite(t, "Stop", makeInput("sess-time", ""))
+	if got.UpdatedAt.IsZero() {
+		t.Error("UpdatedAt should be set")
+	}
+}
+
+func TestProcessEmptyReader(t *testing.T) {
+	err := process("Stop", strings.NewReader(""), func(s state.SessionState) error {
+		t.Fatal("write should not be called for empty input")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("process() should return error for empty input")
+	}
+}
+
+func TestProcessToolInputPassthrough(t *testing.T) {
+	input := `{"session_id":"sess-extra","tool_name":"Write","tool_input":{"file":"/tmp/x"},"message":"test"}`
+	got := captureWrite(t, "PreToolUse", input)
+	if got.SessionID != "sess-extra" {
+		t.Errorf("SessionID = %q, want sess-extra", got.SessionID)
+	}
+	if got.CurrentTool != "Write" {
+		t.Errorf("CurrentTool = %q, want Write", got.CurrentTool)
 	}
 }

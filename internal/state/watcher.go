@@ -12,11 +12,17 @@ type Watcher struct {
 	Errors chan error
 	done   chan struct{}
 	fw     *fsnotify.Watcher
+	store  *Store
 }
 
-// NewWatcher creates and starts a file watcher on the state directory.
+// NewWatcher creates and starts a file watcher on the default state directory.
 func NewWatcher() (*Watcher, error) {
-	if err := os.MkdirAll(Dir(), 0o755); err != nil {
+	return NewWatcherForStore(defaultStore)
+}
+
+// NewWatcherForStore creates and starts a file watcher on the given store's directory.
+func NewWatcherForStore(store *Store) (*Watcher, error) {
+	if err := os.MkdirAll(store.Dir(), 0o755); err != nil {
 		return nil, err
 	}
 
@@ -24,7 +30,7 @@ func NewWatcher() (*Watcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := fw.Add(Dir()); err != nil {
+	if err := fw.Add(store.Dir()); err != nil {
 		fw.Close()
 		return nil, err
 	}
@@ -34,6 +40,7 @@ func NewWatcher() (*Watcher, error) {
 		Errors: make(chan error, 4),
 		done:   make(chan struct{}),
 		fw:     fw,
+		store:  store,
 	}
 	go w.loop()
 	return w, nil
@@ -56,12 +63,12 @@ func (w *Watcher) loop() {
 			if len(event.Name) < 5 || event.Name[len(event.Name)-5:] != ".json" {
 				continue
 			}
-			states, err := ReadAll()
+			states, err := w.store.ReadAll()
 			if err != nil {
 				continue
 			}
 			for _, s := range states {
-				if Path(s.SessionID) == event.Name {
+				if w.store.Path(s.SessionID) == event.Name {
 					select {
 					case w.Events <- s:
 					default:
