@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  schedule:
+    # 11 PM UTC daily (7 PM ET, 6 PM CT)
+    - cron: "0 23 * * *"
+  workflow_dispatch: # manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes since last tag
+        id: check
+        run: |
+          # Get latest tag sorted by version
+          LATEST_TAG=$(git tag --sort=-v:refname | head -1)
+          
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No tags yet, will create 1.0"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "new_tag=1.0" >> $GITHUB_OUTPUT
+          else
+            # Check if there are commits since last tag
+            COMMITS=$(git rev-list ${LATEST_TAG}..HEAD --count)
+            if [ "$COMMITS" -gt 0 ]; then
+              echo "Found $COMMITS new commits since $LATEST_TAG"
+              # Extract major and build number, increment build
+              MAJOR=$(echo $LATEST_TAG | cut -d. -f1)
+              BUILD=$(echo $LATEST_TAG | cut -d. -f2)
+              NEW_TAG="${MAJOR}.$((BUILD + 1))"
+              echo "should_release=true" >> $GITHUB_OUTPUT
+              echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+            else
+              echo "No changes since $LATEST_TAG"
+              echo "should_release=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Create tag
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.check.outputs.new_tag }}
+          git push origin ${{ steps.check.outputs.new_tag }}
+
+      - uses: actions/setup-go@v5
+        if: steps.check.outputs.should_release == 'true'
+        with:
+          go-version-file: go.mod
+
+      - uses: goreleaser/goreleaser-action@v6
+        if: steps.check.outputs.should_release == 'true'
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

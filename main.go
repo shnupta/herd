@@ -12,6 +12,9 @@ import (
 	"github.com/shnupta/herd/internal/tui"
 )
 
+// version is set by goreleaser via ldflags
+var version = "dev"
+
 const usage = `herd — tmux-based Claude Code session manager
 
 Usage:
@@ -53,6 +56,11 @@ func main() {
 
 	if len(os.Args) == 2 && (os.Args[1] == "--help" || os.Args[1] == "-h" || os.Args[1] == "help") {
 		fmt.Print(usage)
+		return
+	}
+
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version") {
+		fmt.Println(version)
 		return
 	}
 
