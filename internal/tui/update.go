@@ -242,6 +242,13 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.sessions = merged
 		m.itemsDirty = true
+		// Apply persisted state files first so sessions have their IDs before
+		// cleanupSidebarState() evaluates which keys are active. Without this,
+		// session: keys in savedOrder get pruned on startup because sessions
+		// haven't received IDs yet, destroying the persisted order.
+		if states, err := state.ReadAll(); err == nil {
+			m = m.applyStates(states)
+		}
 		m.cleanupSidebarState()
 		if m.sidebarDirty {
 			m.saveSidebarState()
@@ -275,9 +282,6 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pendingQuickRetried = true
 				cmds = append(cmds, pendingDiscoveryTick())
 			}
-		}
-		if states, err := state.ReadAll(); err == nil {
-			m = m.applyStates(states)
 		}
 		if m.ready {
 			if sel := m.selectedSession(); sel != nil {
