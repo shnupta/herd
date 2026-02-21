@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -12,8 +13,29 @@ import (
 	"github.com/shnupta/herd/internal/tui"
 )
 
-// version is set by goreleaser via ldflags
-var version = "dev"
+// version is set by goreleaser or Makefile via ldflags
+var version = ""
+
+func getVersion() string {
+	if version != "" {
+		return version
+	}
+	// Fall back to Go's built-in build info (works with go install)
+	if info, ok := debug.ReadBuildInfo(); ok {
+		// Try to get VCS revision
+		var revision string
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && len(s.Value) >= 7 {
+				revision = s.Value[:7]
+				break
+			}
+		}
+		if revision != "" {
+			return "dev+" + revision
+		}
+	}
+	return "dev"
+}
 
 const usage = `herd — tmux-based Claude Code session manager
 
@@ -60,7 +82,7 @@ func main() {
 	}
 
 	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version") {
-		fmt.Println(version)
+		fmt.Println(getVersion())
 		return
 	}
 
