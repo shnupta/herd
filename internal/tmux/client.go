@@ -223,8 +223,19 @@ func KillPane(paneID string) error {
 	return nil
 }
 
-// NewWindow creates a new tmux window running cmd in path and returns the new pane ID.
-// The window is created detached (-d) so the client stays on the current window.
+// NewWindow creates a new tmux window in path, types cmd into the shell, and
+// returns the new pane ID. The window is created detached (-d) so the client
+// stays on the current window.
+//
+// We intentionally do NOT pass cmd as the window command. Doing so runs it
+// directly without a shell, which means:
+//   - The pane closes as soon as cmd exits (no shell survives to keep it open).
+//   - On macOS, PATH may not include the user's shell profile entries (e.g.
+//     Homebrew), so the binary may not be found or process naming may differ.
+//
+// Instead, we start the window with the user's default shell (no command), then
+// send cmd as keystrokes. The shell remains after cmd exits and its full
+// environment is available from the start.
 func NewWindow(tmuxSession, path, cmd string) (string, error) {
 	out, err := exec.Command(
 		"tmux", "new-window",
@@ -232,12 +243,19 @@ func NewWindow(tmuxSession, path, cmd string) (string, error) {
 		"-t", tmuxSession,
 		"-c", path,
 		"-P", "-F", "#{pane_id}",
-		cmd,
+		// no command → tmux starts the user's default shell
 	).Output()
 	if err != nil {
 		return "", fmt.Errorf("tmux new-window: %w", err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	paneID := strings.TrimSpace(string(out))
+
+	// Type the command into the shell. SendKeys sends it literally then presses
+	// Enter, so the shell executes it while remaining alive afterwards.
+	if err := SendKeys(paneID, cmd); err != nil {
+		return paneID, fmt.Errorf("send command to new pane: %w", err)
+	}
+	return paneID, nil
 }
 
 // CurrentSession returns the tmux session name herd is running in.
