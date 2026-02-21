@@ -11,6 +11,10 @@ type Config struct {
 	// ProjectDirs is a list of directories to scan for projects.
 	// Defaults to the user's home directory if empty.
 	ProjectDirs []string `json:"project_dirs,omitempty"`
+
+	// DangerouslySkipPermissions if true, launches Claude with --dangerously-skip-permissions.
+	// This skips the permission prompt for tool use.
+	DangerouslySkipPermissions bool `json:"dangerously_skip_permissions,omitempty"`
 }
 
 // DefaultConfig returns the default configuration.
