@@ -95,7 +95,8 @@ type Model struct {
 	cursorOnGroup   string          // non-empty when cursor rests on a collapsed group header
 
 	// Pending selection after new session creation
-	pendingSelectPane string // pane ID to select after next session discovery
+	pendingSelectPane    string // pane ID to select after next session discovery
+	pendingQuickRetried  bool   // true once the one quick 500ms retry has fired
 
 	// Pinning and ordering (keyed by session key: "session:<id>" or "pane:<id>")
 	pinned       map[string]int // sessionKey -> pin order (lower = pinned earlier)
@@ -111,8 +112,9 @@ type Model struct {
 }
 
 const (
-	pollInterval         = 100 * time.Millisecond
-	sessionRefreshInterval = 3 * time.Second
+	pollInterval            = 100 * time.Millisecond
+	sessionRefreshInterval  = 3 * time.Second
+	pendingDiscoveryInterval = 500 * time.Millisecond
 )
 
 // New returns an initialised Model.
@@ -204,6 +206,18 @@ func tickCapture() tea.Cmd {
 func tickSessionRefresh() tea.Cmd {
 	return tea.Tick(sessionRefreshInterval, func(t time.Time) tea.Msg {
 		return sessionRefreshMsg(t)
+	})
+}
+
+// pendingDiscoveryTick schedules a quick session re-discovery for when a newly
+// created pane hasn't appeared yet (Claude may still be initialising).
+func pendingDiscoveryTick() tea.Cmd {
+	return tea.Tick(pendingDiscoveryInterval, func(t time.Time) tea.Msg {
+		sessions, err := session.Discover()
+		if err != nil {
+			return errMsg{err}
+		}
+		return sessionsDiscoveredMsg(sessions)
 	})
 }
 

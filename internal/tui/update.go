@@ -72,6 +72,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = err
 				} else {
 					m.pendingSelectPane = paneID
+					m.pendingQuickRetried = false
 				}
 				m.pickerMode = false
 				m.pickerModel = nil
@@ -252,8 +253,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.lastCapture = ""        // Force viewport refresh
 					m.pendingGotoBottom = true // Jump to bottom of new session
 					m.pendingSelectPane = ""   // Found — stop searching
+					m.pendingQuickRetried = false
 					break
 				}
+			}
+			// Still waiting — fire one quick 500ms retry (Claude may still be
+			// initialising). After that, let the normal 3s timer handle it.
+			if m.pendingSelectPane != "" && !m.pendingQuickRetried {
+				m.pendingQuickRetried = true
+				cmds = append(cmds, pendingDiscoveryTick())
 			}
 		}
 		if states, err := state.ReadAll(); err == nil {
