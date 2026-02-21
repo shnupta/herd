@@ -95,7 +95,8 @@ type Model struct {
 	cursorOnGroup   string          // non-empty when cursor rests on a collapsed group header
 
 	// Pending selection after new session creation
-	pendingSelectPane string // pane ID to select after next session discovery
+	pendingSelectPane    string // pane ID to select after next session discovery
+	pendingQuickRetried  bool   // true once the one quick 500ms retry has fired
 
 	// Pinning and ordering (keyed by session key: "session:<id>" or "pane:<id>")
 	pinned       map[string]int // sessionKey -> pin order (lower = pinned earlier)
