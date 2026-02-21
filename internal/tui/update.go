@@ -68,7 +68,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if pickerModel.ChosenPath() != "" {
 				// Launch new session and remember the pane ID for selection
-				if paneID, err := LaunchSession(pickerModel.ChosenPath()); err == nil {
+				if paneID, err := LaunchSession(pickerModel.ChosenPath()); err != nil {
+					m.err = err
+				} else {
 					m.pendingSelectPane = paneID
 				}
 				m.pickerMode = false
@@ -239,17 +241,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selected >= len(m.sessions) {
 			m.selected = maxInt(0, len(m.sessions)-1)
 		}
-		// If we have a pending pane selection, find and select it
+		// If we have a pending pane selection, find and select it.
+		// We keep trying across refreshes because the new pane may still be
+		// initializing (shell starting, claude not yet running) when the first
+		// discovery fires.
 		if m.pendingSelectPane != "" {
 			for i, s := range m.sessions {
 				if s.TmuxPane == m.pendingSelectPane {
 					m.selected = i
 					m.lastCapture = ""        // Force viewport refresh
 					m.pendingGotoBottom = true // Jump to bottom of new session
+					m.pendingSelectPane = ""   // Found — stop searching
 					break
 				}
 			}
-			m.pendingSelectPane = ""
 		}
 		if states, err := state.ReadAll(); err == nil {
 			m = m.applyStates(states)
