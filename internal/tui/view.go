@@ -40,6 +40,11 @@ func (m Model) View() string {
 		return m.renderGroupSetOverlay()
 	}
 
+	// No sessions — show landing page instead of the normal split layout.
+	if len(m.sessions) == 0 {
+		return m.renderLandingPage()
+	}
+
 	header := m.renderHeader()
 	outputHeader := m.renderOutputHeader()
 
@@ -286,6 +291,38 @@ func sessionMeta(s session.Session) string {
 	}
 }
 
+
+func (m Model) renderLandingPage() string {
+	titleStyle := lipgloss.NewStyle().
+		Foreground(colAccent).
+		Bold(true)
+
+	subtextStyle := lipgloss.NewStyle().
+		Foreground(colSubtext)
+
+	hintStyle := lipgloss.NewStyle().
+		Foreground(colText)
+
+	keyStyle := lipgloss.NewStyle().
+		Foreground(colAccent)
+
+	body := lipgloss.JoinVertical(lipgloss.Center,
+		titleStyle.Render("herd"),
+		"",
+		subtextStyle.Render("no Claude sessions found in tmux"),
+		"",
+		hintStyle.Render("open Claude Code in a tmux pane to get started"),
+		subtextStyle.Render("or press "+keyStyle.Render("[n]")+" to launch a new session"),
+	)
+
+	page := lipgloss.NewStyle().
+		Width(m.width).
+		Height(m.height).
+		Align(lipgloss.Center, lipgloss.Center).
+		Render(body)
+
+	return page
+}
 
 func (m Model) renderRenameOverlay() string {
 	titleStyle := lipgloss.NewStyle().
