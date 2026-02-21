@@ -25,6 +25,11 @@ func (m Model) View() string {
 		return m.reviewModel.View()
 	}
 
+	// If in worktree mode, show the worktree panel
+	if m.worktreeMode && m.worktreeModel != nil {
+		return m.worktreeModel.View()
+	}
+
 	// If in picker mode, show the project picker
 	if m.pickerMode && m.pickerModel != nil {
 		return m.pickerModel.View()

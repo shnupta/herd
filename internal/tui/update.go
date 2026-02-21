@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/shnupta/herd/internal/diff"
+	"github.com/shnupta/herd/internal/git"
 	"github.com/shnupta/herd/internal/hook"
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/state"
@@ -92,6 +93,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		// Other messages fall through to main handler
+	}
+
+	// If in worktree mode, delegate key and resize events to the worktree model.
+	if m.worktreeMode && m.worktreeModel != nil {
+		switch msg.(type) {
+		case tea.KeyMsg, tea.WindowSizeMsg:
+			updated, cmd := m.worktreeModel.Update(msg)
+			wm := updated.(WorktreeModel)
+			m.worktreeModel = &wm
+
+			if path := wm.ChosenPath(); path != "" {
+				m.worktreeMode = false
+				m.worktreeModel = nil
+				return m, m.openOrSwitchWorktree(path)
+			}
+			if createPath, branch, ok := wm.ShouldCreate(); ok {
+				sel := m.selectedSession()
+				repoRoot := ""
+				if sel != nil {
+					repoRoot = sel.GitRoot
+				}
+				m.worktreeMode = false
+				m.worktreeModel = nil
+				return m, createAndLaunchWorktree(repoRoot, createPath, branch)
+			}
+			if wtPath, sessionPane, ok := wm.ShouldRemove(); ok {
+				repoRoot := ""
+				if sel := m.selectedSession(); sel != nil {
+					repoRoot = sel.GitRoot
+				}
+				m.worktreeMode = false
+				m.worktreeModel = nil
+				return m, removeWorktree(repoRoot, wtPath, sessionPane)
+			}
+			if wm.Cancelled() {
+				m.worktreeMode = false
+				m.worktreeModel = nil
+				m.lastCapture = ""
+				if sel := m.selectedSession(); sel != nil {
+					return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+				}
+				return m, tea.Batch(tickCapture(), tickSessionRefresh())
+			}
+			return m, cmd
+		}
+		// Other messages fall through to main handler.
 	}
 
 	// If in filter mode, handle filter input
@@ -306,6 +353,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		cmds = append(cmds, cmd)
 
+	// ── Worktree launched ──────────────────────────────────────────────────
+	case worktreeLaunchedMsg:
+		m.pendingSelectPane = string(msg)
+		return m, tea.Batch(discoverSessions(), tickCapture(), tickSessionRefresh())
+
+	// ── Worktree removed ───────────────────────────────────────────────────
+	case worktreeRemovedMsg:
+		if msg.sessionPane != "" {
+			// Remove killed session from in-memory list.
+			for i, s := range m.sessions {
+				if s.TmuxPane == msg.sessionPane {
+					delete(m.pinned, s.Key())
+					m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
+					if m.selected >= len(m.sessions) {
+						m.selected = maxInt(0, len(m.sessions)-1)
+					}
+					m.lastCapture = ""
+					m.pendingGotoBottom = true
+					m.cleanupSidebarState()
+					m.saveSidebarState()
+					break
+				}
+			}
+		}
+		return m, discoverSessions()
+
 	// ── Error ──────────────────────────────────────────────────────────────
 	case errMsg:
 		m.err = msg.err
@@ -416,7 +489,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pickerMode = true
 
 		case key.Matches(msg, keys.Worktree):
-			// TODO: worktree panel
+			if sel := m.selectedSession(); sel != nil && sel.GitRoot != "" {
+				if worktrees, err := git.ListWorktrees(sel.GitRoot); err == nil {
+					wm := NewWorktreeModel(worktrees, sel.GitRoot, m.sessions, m.width, m.height)
+					m.worktreeModel = &wm
+					m.worktreeMode = true
+				}
+			}
 
 		case key.Matches(msg, keys.Review):
 			// Open diff review for the selected session's project
@@ -558,6 +637,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// ── Worktree helpers ───────────────────────────────────────────────────────
+
+// openOrSwitchWorktree returns a Cmd that switches to an existing herd session
+// whose ProjectPath is inside wtPath, or launches a new Claude session there.
+func (m *Model) openOrSwitchWorktree(wtPath string) tea.Cmd {
+	for i, s := range m.sessions {
+		if strings.HasPrefix(s.ProjectPath, wtPath) {
+			m.selected = i
+			m.lastCapture = ""
+			m.pendingGotoBottom = true
+			return fetchCapture(s.TmuxPane)
+		}
+	}
+	return func() tea.Msg {
+		paneID, err := LaunchSession(wtPath)
+		if err != nil {
+			return errMsg{err}
+		}
+		return worktreeLaunchedMsg(paneID)
+	}
+}
+
+// removeWorktree is a Cmd that kills the associated session (if any) then removes the worktree.
+func removeWorktree(repoRoot, wtPath, sessionPane string) tea.Cmd {
+	return func() tea.Msg {
+		if sessionPane != "" {
+			_ = tmux.KillPane(sessionPane)
+		}
+		if err := git.RemoveWorktree(repoRoot, wtPath); err != nil {
+			return errMsg{err}
+		}
+		return worktreeRemovedMsg{sessionPane: sessionPane}
+	}
+}
+
+// createAndLaunchWorktree is a Cmd that creates the worktree then launches Claude.
+func createAndLaunchWorktree(repoRoot, path, branch string) tea.Cmd {
+	return func() tea.Msg {
+		if err := git.AddWorktree(repoRoot, path, branch); err != nil {
+			return errMsg{err}
+		}
+		paneID, err := LaunchSession(path)
+		if err != nil {
+			return errMsg{err}
+		}
+		return worktreeLaunchedMsg(paneID)
+	}
 }
 
 // ── Key forwarding ─────────────────────────────────────────────────────────
