@@ -265,8 +265,8 @@ func (m PickerModel) Cancelled() bool {
 
 // LaunchSession creates a new tmux window with claude in the given directory.
 // Returns the new pane ID on success.
-func LaunchSession(projectPath string) (string, error) {
-	sess, err := tmux.CurrentSession()
+func LaunchSession(projectPath string, client tmux.ClientIface) (string, error) {
+	sess, err := client.CurrentSession()
 	if err != nil {
 		return "", err
 	}
@@ -278,7 +278,7 @@ func LaunchSession(projectPath string) (string, error) {
 		cmd = "claude --dangerously-skip-permissions"
 	}
 
-	return tmux.NewWindow(sess, projectPath, cmd)
+	return client.NewWindow(sess, projectPath, cmd)
 }
 
 func shortenPath(p string) string {

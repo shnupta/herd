@@ -15,7 +15,6 @@ import (
 	"github.com/shnupta/herd/internal/names"
 	"github.com/shnupta/herd/internal/session"
 	"github.com/shnupta/herd/internal/state"
-	"github.com/shnupta/herd/internal/tmux"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -58,14 +57,14 @@ func (m Model) updateReviewMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if reviewModel.Submitted() {
 		if sel := m.selectedSession(); sel != nil && reviewModel.FeedbackText() != "" {
-			_ = tmux.SendKeys(sel.TmuxPane, reviewModel.FeedbackText())
+			_ = m.tmuxClient.SendKeys(sel.TmuxPane, reviewModel.FeedbackText())
 		}
 		m.mode = ModeNormal
 		m.reviewModel = nil
 		m.lastCapture = ""
 		m.forceViewportRefresh = true
 		if sel := m.selectedSession(); sel != nil {
-			return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+			return m, tea.Batch(tickCapture(), tickSessionRefresh(), m.fetchCapture(sel.TmuxPane))
 		}
 		return m, tea.Batch(tickCapture(), tickSessionRefresh())
 	} else if reviewModel.Cancelled() {
@@ -74,7 +73,7 @@ func (m Model) updateReviewMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastCapture = ""
 		m.forceViewportRefresh = true
 		if sel := m.selectedSession(); sel != nil {
-			return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+			return m, tea.Batch(tickCapture(), tickSessionRefresh(), m.fetchCapture(sel.TmuxPane))
 		}
 		return m, tea.Batch(tickCapture(), tickSessionRefresh())
 	}
@@ -92,7 +91,7 @@ func (m Model) updatePickerMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.pickerModel = &pickerModel
 
 	if pickerModel.ChosenPath() != "" {
-		if paneID, err := LaunchSession(pickerModel.ChosenPath()); err != nil {
+		if paneID, err := LaunchSession(pickerModel.ChosenPath(), m.tmuxClient); err != nil {
 			m.err = err
 		} else {
 			m.pendingSelectPane = paneID
@@ -102,14 +101,14 @@ func (m Model) updatePickerMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pickerModel = nil
 		m.lastCapture = ""
 		m.forceViewportRefresh = true
-		return m, tea.Batch(discoverSessions(), tickCapture(), tickSessionRefresh())
+		return m, tea.Batch(m.discoverSessions(), tickCapture(), tickSessionRefresh())
 	} else if pickerModel.Cancelled() {
 		m.mode = ModeNormal
 		m.pickerModel = nil
 		m.lastCapture = ""
 		m.forceViewportRefresh = true
 		if sel := m.selectedSession(); sel != nil {
-			return m, tea.Batch(tickCapture(), tickSessionRefresh(), fetchCapture(sel.TmuxPane))
+			return m, tea.Batch(tickCapture(), tickSessionRefresh(), m.fetchCapture(sel.TmuxPane))
 		}
 		return m, tea.Batch(tickCapture(), tickSessionRefresh())
 	}
@@ -217,7 +216,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ready = true
 		}
 		if sel := m.selectedSession(); sel != nil {
-			cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+			cmds = append(cmds, m.resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
 		}
 
 	// ── Initial session discovery ──────────────────────────────────────────
@@ -280,25 +279,25 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.pendingSelectPane != "" && !m.pendingQuickRetried {
 				m.pendingQuickRetried = true
-				cmds = append(cmds, pendingDiscoveryTick())
+				cmds = append(cmds, m.pendingDiscoveryTick())
 			}
 		}
 		if m.ready {
 			if sel := m.selectedSession(); sel != nil {
-				cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+				cmds = append(cmds, m.resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
 			}
 		}
 
 	// ── Session list auto-refresh ──────────────────────────────────────────
 	case sessionRefreshMsg:
 		_ = m.teamsStore.Load() // pick up new/updated team configs
-		cmds = append(cmds, discoverSessions(), tickSessionRefresh())
+		cmds = append(cmds, m.discoverSessions(), tickSessionRefresh())
 
 	// ── Capture-pane poll ──────────────────────────────────────────────────
 	case tickMsg:
 		cmds = append(cmds, tickCapture())
 		if sel := m.selectedSession(); sel != nil {
-			cmds = append(cmds, fetchCapture(sel.TmuxPane))
+			cmds = append(cmds, m.fetchCapture(sel.TmuxPane))
 		}
 
 	case captureMsg:
@@ -344,11 +343,11 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == "ctrl+h" {
 				m.insertMode = false
 			} else if sel := m.selectedSession(); sel != nil {
-				if err := forwardKey(sel.TmuxPane, msg); err != nil {
+				if err := m.forwardKey(sel.TmuxPane, msg); err != nil {
 					m.err = err
 					m.insertMode = false
 				} else {
-					cmds = append(cmds, fetchCapture(sel.TmuxPane))
+					cmds = append(cmds, m.fetchCapture(sel.TmuxPane))
 				}
 			}
 			return m, tea.Batch(cmds...)
@@ -357,7 +356,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, keys.Quit):
 			for _, s := range m.sessions {
-				_ = tmux.ResizePaneAuto(s.TmuxPane)
+				_ = m.tmuxClient.ResizePaneAuto(s.TmuxPane)
 			}
 			return m, tea.Quit
 
@@ -370,9 +369,9 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.lastCapture = ""
 					m.forceViewportRefresh = true
 					m.pendingGotoBottom = true
-					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+					cmds = append(cmds, m.resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
 				}
-				cmds = append(cmds, fetchCapture(sel.TmuxPane))
+				cmds = append(cmds, m.fetchCapture(sel.TmuxPane))
 			}
 
 		case key.Matches(msg, keys.Down):
@@ -382,14 +381,14 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.lastCapture = ""
 					m.forceViewportRefresh = true
 					m.pendingGotoBottom = true
-					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+					cmds = append(cmds, m.resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
 				}
-				cmds = append(cmds, fetchCapture(sel.TmuxPane))
+				cmds = append(cmds, m.fetchCapture(sel.TmuxPane))
 			}
 
 		case key.Matches(msg, keys.Jump):
 			if sel := m.selectedSession(); sel != nil {
-				if err := tmux.SwitchToPane(sel.TmuxPane); err != nil {
+				if err := m.tmuxClient.SwitchToPane(sel.TmuxPane); err != nil {
 					m.err = err
 				}
 			}
@@ -398,7 +397,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.insertMode = true
 
 		case key.Matches(msg, keys.Refresh):
-			cmds = append(cmds, discoverSessions())
+			cmds = append(cmds, m.discoverSessions())
 
 		case key.Matches(msg, keys.Install):
 			selfPath, _ := os.Executable()
@@ -408,7 +407,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.Kill):
 			if sel := m.selectedSession(); sel != nil {
-				if err := tmux.KillPane(sel.TmuxPane); err != nil {
+				if err := m.tmuxClient.KillPane(sel.TmuxPane); err != nil {
 					m.err = err
 				} else {
 					delete(m.pinned, sel.Key())
@@ -418,7 +417,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.itemsDirty = true
 					var cmd tea.Cmd
-					m, cmd = selectSession(m)
+					m, cmd = m.selectSession()
 					cmds = append(cmds, cmd)
 					m.forceViewportRefresh = true
 					m.itemsDirty = true
@@ -539,7 +538,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if moved, newSel := m.moveSessionUp(); moved {
 				m.selected = newSel
 				var cmd tea.Cmd
-				m, cmd = selectSession(m)
+				m, cmd = m.selectSession()
 				cmds = append(cmds, cmd)
 				m.forceViewportRefresh = true
 				m.saveSidebarState()
@@ -550,7 +549,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if moved, newSel := m.moveSessionDown(); moved {
 				m.selected = newSel
 				var cmd tea.Cmd
-				m, cmd = selectSession(m)
+				m, cmd = m.selectSession()
 				cmds = append(cmds, cmd)
 				m.forceViewportRefresh = true
 				m.saveSidebarState()
@@ -578,7 +577,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.cursorOnGroup = ""
 						m.itemsDirty = true
 						var cmd tea.Cmd
-						m, cmd = selectSession(m)
+						m, cmd = m.selectSession()
 						cmds = append(cmds, cmd)
 						m.forceViewportRefresh = true
 					}
@@ -651,31 +650,31 @@ var tmuxKeyNames = map[string]string{
 
 // forwardKey sends a single key event to the given tmux pane.
 // ctrl+h is the exit-insert-mode key and is never forwarded.
-func forwardKey(paneID string, msg tea.KeyMsg) error {
+func (m Model) forwardKey(paneID string, msg tea.KeyMsg) error {
 	if msg.String() == "ctrl+h" {
 		return nil // exit key — handled by caller
 	}
 	if name, ok := tmuxKeyNames[msg.String()]; ok {
-		return tmux.SendKeyName(paneID, name)
+		return m.tmuxClient.SendKeyName(paneID, name)
 	}
 	if msg.Type == tea.KeyRunes {
 		if len(msg.Runes) == 0 {
 			return nil
 		}
-		return tmux.SendLiteral(paneID, string(msg.Runes))
+		return m.tmuxClient.SendLiteral(paneID, string(msg.Runes))
 	}
 	return nil
 }
 
 // selectSession resets viewport state for a newly selected session and returns
 // commands to resize the observed pane and fetch its capture.
-func selectSession(m Model) (Model, tea.Cmd) {
+func (m Model) selectSession() (Model, tea.Cmd) {
 	m.lastCapture = ""
 	m.pendingGotoBottom = true
 	var cmds []tea.Cmd
 	if sel := m.selectedSession(); sel != nil {
-		cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
-		cmds = append(cmds, fetchCapture(sel.TmuxPane))
+		cmds = append(cmds, m.resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
+		cmds = append(cmds, m.fetchCapture(sel.TmuxPane))
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -685,19 +684,21 @@ func selectSession(m Model) (Model, tea.Cmd) {
 // resizePaneToViewport resizes the tmux window containing paneID to width×height
 // so that the observed session formats its output to fit the herd viewport.
 // This is a fire-and-forget async command; errors are silently ignored.
-func resizePaneToViewport(paneID string, width, height int) tea.Cmd {
+func (m Model) resizePaneToViewport(paneID string, width, height int) tea.Cmd {
 	if paneID == "" || width <= 0 || height <= 0 {
 		return nil
 	}
+	client := m.tmuxClient
 	return func() tea.Msg {
-		_ = tmux.ResizeWindow(paneID, width, height)
+		_ = client.ResizeWindow(paneID, width, height)
 		return nil
 	}
 }
 
-func fetchCapture(paneID string) tea.Cmd {
+func (m Model) fetchCapture(paneID string) tea.Cmd {
+	client := m.tmuxClient
 	return func() tea.Msg {
-		content, err := tmux.CapturePane(paneID, 2000)
+		content, err := client.CapturePane(paneID, 2000)
 		if err != nil {
 			return nil
 		}

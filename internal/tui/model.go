@@ -15,6 +15,7 @@ import (
 	"github.com/shnupta/herd/internal/sidebar"
 	"github.com/shnupta/herd/internal/state"
 	"github.com/shnupta/herd/internal/teams"
+	"github.com/shnupta/herd/internal/tmux"
 )
 
 // viewItem represents a single renderable/navigable row in the session sidebar.
@@ -106,10 +107,13 @@ type Model struct {
 	itemsDirty  bool
 
 	// State
-	spinner  spinner.Model
+	spinner     spinner.Model
 	stateWatcher *state.Watcher
-	err      error
-	ready    bool
+	err         error
+	ready       bool
+
+	// Tmux client (injected; defaults to *tmux.Client in production)
+	tmuxClient tmux.ClientIface
 }
 
 const (
@@ -119,7 +123,7 @@ const (
 )
 
 // New returns an initialised Model.
-func New(w *state.Watcher) Model {
+func New(w *state.Watcher, tc tmux.ClientIface) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
@@ -168,12 +172,13 @@ func New(w *state.Watcher) Model {
 		teamsStore:      ts,
 		collapsedGroups: make(map[string]bool),
 		itemsDirty:      true,
+		tmuxClient:      tc,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		discoverSessions(),
+		m.discoverSessions(),
 		tickCapture(),
 		tickSessionRefresh(),
 		waitForStateEvent(m.stateWatcher),
@@ -182,9 +187,10 @@ func (m Model) Init() tea.Cmd {
 }
 
 // discoverSessions triggers async session discovery.
-func discoverSessions() tea.Cmd {
+func (m Model) discoverSessions() tea.Cmd {
+	client := m.tmuxClient
 	return func() tea.Msg {
-		sessions, err := session.Discover()
+		sessions, err := session.Discover(client)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -208,9 +214,10 @@ func tickSessionRefresh() tea.Cmd {
 
 // pendingDiscoveryTick schedules a quick session re-discovery for when a newly
 // created pane hasn't appeared yet (Claude may still be initialising).
-func pendingDiscoveryTick() tea.Cmd {
+func (m Model) pendingDiscoveryTick() tea.Cmd {
+	client := m.tmuxClient
 	return tea.Tick(pendingDiscoveryInterval, func(t time.Time) tea.Msg {
-		sessions, err := session.Discover()
+		sessions, err := session.Discover(client)
 		if err != nil {
 			return errMsg{err}
 		}

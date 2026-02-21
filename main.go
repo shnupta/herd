@@ -9,6 +9,7 @@ import (
 
 	"github.com/shnupta/herd/internal/hook"
 	"github.com/shnupta/herd/internal/state"
+	"github.com/shnupta/herd/internal/tmux"
 	"github.com/shnupta/herd/internal/tui"
 )
 
@@ -102,7 +103,7 @@ func main() {
 		defer watcher.Close()
 	}
 
-	model := tui.New(watcher)
+	model := tui.New(watcher, &tmux.Client{})
 
 	p := tea.NewProgram(
 		model,
