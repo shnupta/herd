@@ -68,3 +68,55 @@ func TestStateString(t *testing.T) {
 		}
 	}
 }
+
+func TestParseState(t *testing.T) {
+	tests := []struct {
+		input string
+		want  State
+	}{
+		{"working", StateWorking},
+		{"waiting", StateWaiting},
+		{"idle", StateIdle},
+		{"plan_ready", StatePlanReady},
+		{"notifying", StateNotifying},
+		{"unknown", StateUnknown},
+		{"", StateUnknown},
+		{"garbage", StateUnknown},
+		{"Working", StateUnknown}, // case-sensitive
+		{"IDLE", StateUnknown},
+	}
+	for _, tt := range tests {
+		if got := ParseState(tt.input); got != tt.want {
+			t.Errorf("ParseState(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestParseStateRoundTrip(t *testing.T) {
+	// Every State's String() should round-trip back through ParseState,
+	// except StateUnknown whose String() is "unknown" (not a valid hook state).
+	states := []State{StateIdle, StateWorking, StateWaiting, StatePlanReady, StateNotifying}
+	for _, s := range states {
+		got := ParseState(s.String())
+		if got != s {
+			t.Errorf("ParseState(%q) = %v, want %v", s.String(), got, s)
+		}
+	}
+}
+
+func TestDisplayNameRootPath(t *testing.T) {
+	s := Session{ProjectPath: "/", TmuxPane: "%1"}
+	got := s.DisplayName()
+	// filepath.Base("/") = "/", parent is also "/" so we get just "/"
+	if got == "" {
+		t.Error("DisplayName should not return empty for root path")
+	}
+}
+
+func TestKeyEmptyBoth(t *testing.T) {
+	s := Session{}
+	got := s.Key()
+	if got != "pane:" {
+		t.Errorf("Key() with empty fields = %q, want %q", got, "pane:")
+	}
+}

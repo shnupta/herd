@@ -46,6 +46,7 @@ func TestInstallPreservesExistingKeys(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
+	// Create existing settings with a custom key
 	claudeDir := filepath.Join(home, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -73,12 +74,14 @@ func TestInstallPreservesExistingKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Check that existing keys are preserved
 	if _, ok := raw["customKey"]; !ok {
 		t.Fatal("customKey was not preserved")
 	}
 	if _, ok := raw["nested"]; !ok {
 		t.Fatal("nested key was not preserved")
 	}
+	// Check that hooks were added
 	if _, ok := raw["hooks"]; !ok {
 		t.Fatal("hooks key was not added")
 	}
@@ -93,6 +96,7 @@ func TestInstallOverwritesExistingHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Create settings with old hooks
 	existing := map[string]interface{}{
 		"hooks": map[string]interface{}{
 			"Stop": []interface{}{
@@ -119,11 +123,16 @@ func TestInstallOverwritesExistingHooks(t *testing.T) {
 	}
 
 	var raw map[string]json.RawMessage
-	json.Unmarshal(result, &raw)
+	if err := json.Unmarshal(result, &raw); err != nil {
+		t.Fatal(err)
+	}
 
 	var hooks hooksConfig
-	json.Unmarshal(raw["hooks"], &hooks)
+	if err := json.Unmarshal(raw["hooks"], &hooks); err != nil {
+		t.Fatal(err)
+	}
 
+	// Verify hooks were replaced with new binary path
 	if hooks.Stop[0].Hooks[0].Command != "/new/herd hook Stop" {
 		t.Fatalf("hooks not updated: %s", hooks.Stop[0].Hooks[0].Command)
 	}
@@ -137,6 +146,7 @@ func TestInstallWithMalformedExistingJSON(t *testing.T) {
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Write malformed JSON — Install should overwrite gracefully
 	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(`{broken`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -145,6 +155,7 @@ func TestInstallWithMalformedExistingJSON(t *testing.T) {
 		t.Fatalf("Install() should succeed with malformed existing JSON: %v", err)
 	}
 
+	// Verify valid JSON was written
 	data, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -204,6 +215,9 @@ func TestInstallAllHookEvents(t *testing.T) {
 		}
 		if rules[0].Hooks[0].Type != "command" {
 			t.Errorf("%s type = %q, want command", name, rules[0].Hooks[0].Type)
+		}
+		if rules[0].Matcher != "" {
+			t.Errorf("%s matcher = %q, want empty", name, rules[0].Matcher)
 		}
 	}
 }
