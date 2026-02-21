@@ -42,6 +42,7 @@ type Session struct {
 
 	// Context
 	ProjectPath string
+	GitRoot     string // absolute path to git repo root; empty if not a git repo
 	GitBranch   string
 
 	// State

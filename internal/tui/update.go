@@ -128,6 +128,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// If in group-set mode, handle group name input
+	if m.groupSetMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				m.groupSetMode = false
+				m.groupSetInput.Reset()
+				m.groupSetKey = ""
+				return m, nil
+			case "enter":
+				groupName := strings.TrimSpace(m.groupSetInput.Value())
+				_ = m.groupsStore.Set(m.groupSetKey, groupName)
+				m.groupSetMode = false
+				m.groupSetInput.Reset()
+				m.groupSetKey = ""
+				return m, nil
+			}
+		}
+		var cmd tea.Cmd
+		m.groupSetInput, cmd = m.groupSetInput.Update(msg)
+		return m, cmd
+	}
+
 	// If in rename mode, handle rename input
 	if m.renameMode {
 		switch msg := msg.(type) {
@@ -307,23 +331,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
-			if m.selected > 0 {
-				m.selected--
-				m.lastCapture = ""
-				m.pendingGotoBottom = true
-				if sel := m.selectedSession(); sel != nil {
+			changed := m.moveUp()
+			// Always fetch immediately so the viewport reflects the new session
+			// without waiting for the next 100ms tick.
+			if sel := m.selectedSession(); sel != nil {
+				if changed {
+					m.lastCapture = ""
+					m.pendingGotoBottom = true
 					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
 				}
+				cmds = append(cmds, fetchCapture(sel.TmuxPane))
 			}
 
 		case key.Matches(msg, keys.Down):
-			if m.selected < len(m.sessions)-1 {
-				m.selected++
-				m.lastCapture = ""
-				m.pendingGotoBottom = true
-				if sel := m.selectedSession(); sel != nil {
+			changed := m.moveDown()
+			if sel := m.selectedSession(); sel != nil {
+				if changed {
+					m.lastCapture = ""
+					m.pendingGotoBottom = true
 					cmds = append(cmds, resizePaneToViewport(sel.TmuxPane, m.viewport.Width, m.viewport.Height))
 				}
+				cmds = append(cmds, fetchCapture(sel.TmuxPane))
 			}
 
 		case key.Matches(msg, keys.Jump):
@@ -426,6 +454,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.renameMode = true
 			}
 
+		case key.Matches(msg, keys.ToggleGroup):
+			m.toggleGroupAtCursor()
+
+		case key.Matches(msg, keys.SetGroup):
+			// Open group-set overlay for the selected session
+			if m.cursorOnGroup == "" {
+				if sel := m.selectedSession(); sel != nil {
+					m.groupSetKey = sel.Key()
+					current := m.groupsStore.Get(m.groupSetKey)
+					m.groupSetInput.SetValue(current)
+					m.groupSetInput.Focus()
+					m.groupSetMode = true
+				}
+			}
+
 		case key.Matches(msg, keys.Pin):
 			// Toggle pin on selected session (keyed by session key for uniqueness)
 			if sel := m.selectedSession(); sel != nil {
@@ -502,7 +545,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// the viewport has its own bindings for those keys and would scroll the
 	// content in addition to switching sessions, causing a visible flicker.
 	if !m.insertMode {
-		if keyMsg, isKey := msg.(tea.KeyMsg); !isKey || (!key.Matches(keyMsg, keys.Up) && !key.Matches(keyMsg, keys.Down)) {
+		if keyMsg, isKey := msg.(tea.KeyMsg); !isKey || (!key.Matches(keyMsg, keys.Up) && !key.Matches(keyMsg, keys.Down) && !key.Matches(keyMsg, keys.ToggleGroup)) {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			cmds = append(cmds, cmd)

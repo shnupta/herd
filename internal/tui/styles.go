@@ -51,6 +51,16 @@ var (
 			Foreground(colSubtext).
 			PaddingLeft(1)
 
+	styleGroupHeader = lipgloss.NewStyle().
+			Foreground(colSubtext).
+			PaddingLeft(1)
+
+	styleGroupHeaderSelected = lipgloss.NewStyle().
+			Background(colSelected).
+			Foreground(colText).
+			Bold(true).
+			PaddingLeft(1)
+
 	styleHelp = lipgloss.NewStyle().
 			Background(colSelected).
 			Foreground(colSubtext).
