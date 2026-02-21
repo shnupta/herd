@@ -20,30 +20,44 @@
 - [x] Filter/search (`/`) — fuzzy filter session list
 - [x] Aggregate stats in header — shows count of sessions by state
 - [x] New session (`n`) — project picker to launch claude in a new tmux window
+- [x] Session grouping — opt-in custom groups (`g` key) with collapsible headers (`space`) and aggregate state dot
+- [x] Session naming (`e`) — assign custom label, persistent via `~/.herd/names.json`
+- [x] Pinning (`p`) — pin sessions to top; pin order persisted via `~/.herd/sidebar.json`
+- [x] Reordering (`J`/`K`) — move sessions up/down in list, order persisted
+- [x] Mouse support — wheel scroll and click-to-select in sidebar
+- [x] Agent team auto-grouping — sessions belonging to a Claude Code agent team are
+      automatically grouped under the team name by reading `~/.claude/teams/*/config.json`;
+      custom group assignments still take precedence
 
 ## In progress / next
 
-### Session grouping
-Group the session sidebar by project (git root or project path).
-Collapsible groups with a toggle key (e.g. `space`).
-Show per-group aggregate state (e.g. amber dot if any session in the group is working).
-
 ### Toggle session visibility
 Hide/show individual sessions or whole groups from the sidebar.
-
-### Session naming
-Assign a custom label to a session that persists across herd restarts.
-Stored in `~/.herd/names.json`, keyed by Claude session ID falling back to pane ID.
-Edit with a prompt overlay (e.g. `e` key).
+Affects display only; session state still syncs in background.
 
 ### Worktrees (`w`)
 For the selected session's project, list git worktrees.
 Option to open an existing worktree in a new Claude session, or create a new
 worktree + session in one step.
+(Key binding exists; core functionality not yet implemented.)
 
 ### Zoom mode (`z`)
 Hide the session sidebar entirely so the viewport fills the terminal.
 Toggle back with `z`.
+
+### Agent team pane resize
+When viewing an agent team session, resize the tmux pane to match herd's viewport
+dimensions so Claude's TUI renders at the correct width and `capture-pane` output
+fits without truncation.
+
+Proposed approach: `tmux resize-pane -t <pane-id> -x <viewport-width> -y <viewport-height>`
+fired when the selected session changes and on `WindowSizeMsg`.
+
+Open question: it's unclear how Claude Code lays out teammate panes (same window as the
+lead, separate window, separate session). Resizing a pane adjusts neighbouring panes in
+the same window, which could disrupt the user's tmux layout. Need to verify the window
+topology before implementing to avoid unintended side-effects. Consider making this
+opt-in behind a setting initially.
 
 ### Improve session discovery
 Current approach scans `pane_current_command` for `"claude"` or a semver string (e.g.
@@ -88,6 +102,5 @@ without knowing which window it lives in. Two parts:
 - `y` yank — copy viewport content to system clipboard
 - Scroll marker — dim badge on session list entry when new output has arrived while scrolled up
 - Persistent session memory — remember which sessions were being monitored so herd can re-attach after a restart
-- Mouse scroll in session list
 - Configurable key bindings
 - `herd new <path>` CLI shorthand to launch a session without opening the TUI
