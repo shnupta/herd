@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -237,15 +238,19 @@ func KillPane(paneID string) error {
 // send cmd as keystrokes. The shell remains after cmd exits and its full
 // environment is available from the start.
 func NewWindow(tmuxSession, path, cmd string) (string, error) {
-	out, err := exec.Command(
+	tmuxCmd := exec.Command(
 		"tmux", "new-window",
 		"-d", // detached — don't switch to the new window
-		"-t", tmuxSession,
+		"-t", tmuxSession+":", // trailing colon = "this session, next window" (avoids numeric ambiguity)
 		"-c", path,
 		"-P", "-F", "#{pane_id}",
 		// no command → tmux starts the user's default shell
-	).Output()
+	)
+	out, err := tmuxCmd.Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+			return "", fmt.Errorf("tmux new-window: %w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+		}
 		return "", fmt.Errorf("tmux new-window: %w", err)
 	}
 	paneID := strings.TrimSpace(string(out))
@@ -259,10 +264,16 @@ func NewWindow(tmuxSession, path, cmd string) (string, error) {
 }
 
 // CurrentSession returns the tmux session name herd is running in.
+// It targets $TMUX_PANE explicitly so the result is correct regardless of
+// which client tmux considers "current".
 func CurrentSession() (string, error) {
-	out, err := exec.Command("tmux", "display-message", "-p", "#{session_name}").Output()
+	pane := os.Getenv("TMUX_PANE")
+	if pane == "" {
+		return "", fmt.Errorf("TMUX_PANE not set — is herd running inside tmux?")
+	}
+	out, err := exec.Command("tmux", "display-message", "-t", pane, "-p", "#{session_name}").Output()
 	if err != nil {
-		return "", fmt.Errorf("not inside tmux: %w", err)
+		return "", fmt.Errorf("tmux display-message: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
