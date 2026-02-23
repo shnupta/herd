@@ -242,16 +242,21 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 	}
 
 	// Only show pin on ungrouped sessions; grouped sessions show it on the header.
+	gKey, _ := m.groupKeyAndName(s)
 	pinIndicator := ""
-	if gKey, _ := m.groupKeyAndName(s); gKey == "" {
+	if gKey == "" {
 		if _, isPinned := m.pinned[s.Key()]; isPinned {
 			pinIndicator = "📌 "
 		}
 	}
 
 	nameStyle := styleSessionItem
+	metaStyle := styleSessionMeta
 	if i == m.selected {
 		nameStyle = styleSessionItemSelected
+	} else if gKey != "" {
+		nameStyle = styleSessionItem.Background(colGroupedBg)
+		metaStyle = styleSessionMeta.Background(colGroupedBg)
 	}
 
 	nameLine := nameStyle.
@@ -260,7 +265,7 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 
 	// Sub-line: tool name or idle duration
 	meta := sessionMeta(s)
-	metaLine := styleSessionMeta.
+	metaLine := metaStyle.
 		Width(sessionPaneWidth - 1).
 		Render(meta)
 
