@@ -6,15 +6,16 @@ const sessionPaneWidth = 28
 
 var (
 	// Colours
-	colAccent  = lipgloss.Color("#7C3AED") // purple
-	colWorking = lipgloss.Color("#F59E0B") // amber
-	colWaiting = lipgloss.Color("#3B82F6") // blue
-	colIdle    = lipgloss.Color("#6B7280") // grey
-	colPlan    = lipgloss.Color("#10B981") // emerald
-	colText    = lipgloss.Color("#E5E7EB")
-	colSubtext = lipgloss.Color("#6B7280")
-	colBorder  = lipgloss.Color("#374151")
-	colSelected = lipgloss.Color("#1F2937")
+	colAccent    = lipgloss.Color("#7C3AED") // purple
+	colWorking   = lipgloss.Color("#F59E0B") // amber
+	colWaiting   = lipgloss.Color("#3B82F6") // blue
+	colIdle      = lipgloss.Color("#6B7280") // grey
+	colPlan      = lipgloss.Color("#10B981") // emerald
+	colText      = lipgloss.Color("#E5E7EB")
+	colSubtext   = lipgloss.Color("#6B7280")
+	colBorder    = lipgloss.Color("#374151")
+	colSelected  = lipgloss.Color("#1F2937")
+	colGroupedBg = lipgloss.Color("#111827") // subtle bg for sessions inside a group
 
 	styleHeader = lipgloss.NewStyle().
 			Background(colAccent).
