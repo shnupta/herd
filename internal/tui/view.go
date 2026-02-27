@@ -254,6 +254,9 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 	metaStyle := styleSessionMeta
 	if i == m.selected {
 		nameStyle = styleSessionItemSelected
+		metaStyle = styleSessionMeta.
+			Background(colSelected).
+			Foreground(lipgloss.Color("#FDE68A"))
 	} else if gKey != "" {
 		nameStyle = styleSessionItem.Background(colGroupedBg)
 		metaStyle = styleSessionMeta.Background(colGroupedBg)
