@@ -14,7 +14,7 @@ var (
 	colText      = lipgloss.Color("#E5E7EB")
 	colSubtext   = lipgloss.Color("#6B7280")
 	colBorder    = lipgloss.Color("#374151")
-	colSelected  = lipgloss.Color("#1F2937")
+	colSelected  = lipgloss.Color("#2D2200") // dark gold tint
 	colGroupedBg = lipgloss.Color("#111827") // subtle bg for sessions inside a group
 
 	styleHeader = lipgloss.NewStyle().
@@ -34,7 +34,7 @@ var (
 
 	styleSessionItemSelected = lipgloss.NewStyle().
 					Background(colSelected).
-					Foreground(colText).
+					Foreground(lipgloss.Color("#FDE68A")). // gold text
 					Bold(true).
 					PaddingLeft(1)
 
@@ -58,7 +58,7 @@ var (
 
 	styleGroupHeaderSelected = lipgloss.NewStyle().
 			Background(colSelected).
-			Foreground(colText).
+			Foreground(lipgloss.Color("#FDE68A")). // gold text
 			Bold(true).
 			PaddingLeft(1)
 
