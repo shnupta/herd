@@ -87,25 +87,31 @@ func (m Model) View() string {
 }
 
 func (m Model) renderHeader() string {
-	title := "herd"
+	// Left: "herd  ·  project [branch]"
+	left := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render("herd")
 	sel := m.selectedSession()
 	if sel != nil {
-		title = fmt.Sprintf("herd  ·  %s", filepath.Base(sel.ProjectPath))
+		proj := lipgloss.NewStyle().Foreground(colGoldText).Render(filepath.Base(sel.ProjectPath))
+		left += lipgloss.NewStyle().Foreground(lipgloss.Color("#C4B5FD")).Render("  ·  ") + proj
 		if sel.GitBranch != "" {
-			title += "  [" + sel.GitBranch + "]"
+			branch := lipgloss.NewStyle().Foreground(lipgloss.Color("#C4B5FD")).Render("[" + sel.GitBranch + "]")
+			left += "  " + branch
 		}
 	}
 
-	// Add aggregate stats
-	stats := m.aggregateStats()
-	if stats != "" {
-		title += "  ·  " + stats
+	// Right: coloured stat pills
+	right := m.aggregateStats()
+
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	if gap < 1 {
+		gap = 1
 	}
 
-	return styleHeader.Width(m.width).Render(title)
+	content := left + strings.Repeat(" ", gap) + right
+	return styleHeader.Width(m.width).Render(content)
 }
 
-// aggregateStats returns a summary of session states.
+// aggregateStats returns a coloured summary of session states.
 func (m Model) aggregateStats() string {
 	if len(m.sessions) == 0 {
 		return ""
@@ -116,31 +122,34 @@ func (m Model) aggregateStats() string {
 		counts[s.State]++
 	}
 
-	var parts []string
+	pill := func(color lipgloss.Color, text string) string {
+		return lipgloss.NewStyle().
+			Foreground(color).
+			Bold(true).
+			Render(text)
+	}
 
-	// Order matters for readability
+	var parts []string
 	if n := counts[session.StateWorking]; n > 0 {
-		parts = append(parts, fmt.Sprintf("%d working", n))
+		parts = append(parts, pill(colGreen, fmt.Sprintf("● %d working", n)))
 	}
 	if n := counts[session.StateWaiting]; n > 0 {
-		parts = append(parts, fmt.Sprintf("%d waiting", n))
+		parts = append(parts, pill(colBlue, fmt.Sprintf("◉ %d waiting", n)))
 	}
 	if n := counts[session.StatePlanReady]; n > 0 {
-		parts = append(parts, fmt.Sprintf("%d plan", n))
+		parts = append(parts, pill(colAmber, fmt.Sprintf("◆ %d plan", n)))
 	}
 	if n := counts[session.StateNotifying]; n > 0 {
-		parts = append(parts, fmt.Sprintf("%d notify", n))
+		parts = append(parts, pill(colPurple, fmt.Sprintf("◈ %d notify", n)))
 	}
 	if n := counts[session.StateIdle]; n > 0 {
-		parts = append(parts, fmt.Sprintf("%d idle", n))
+		parts = append(parts, pill(colCyan, fmt.Sprintf("○ %d idle", n)))
 	}
-
-	// If all are unknown/untracked, just show total
 	if len(parts) == 0 {
-		return fmt.Sprintf("%d sessions", len(m.sessions))
+		return lipgloss.NewStyle().Foreground(colSubtext).Render(fmt.Sprintf("%d sessions", len(m.sessions)))
 	}
-
-	return strings.Join(parts, "  ")
+	sep := lipgloss.NewStyle().Foreground(colSubtle).Render("  ·  ")
+	return strings.Join(parts, sep)
 }
 
 func (m Model) renderOutputHeader() string {
@@ -152,15 +161,13 @@ func (m Model) renderOutputHeader() string {
 	icon := stateIcon(sel.State.String())
 	label := stateLabel(sel.State.String(), sel.CurrentTool)
 
-	// Pane ID anchored to the left section so it never shifts.
-	// Scroll % floats to the far right and only appears when not at bottom.
-	subtext := lipgloss.NewStyle().Foreground(colSubtext)
-	left := " " + icon + " " + label + "  " + subtext.Render(sel.TmuxPane)
+	paneStyle := lipgloss.NewStyle().Foreground(colSubtle)
+	left := " " + icon + " " + label + "  " + paneStyle.Render(sel.TmuxPane)
 
 	right := ""
 	if !m.viewport.AtBottom() {
 		pct := int(m.viewport.ScrollPercent() * 100)
-		right = subtext.Render(fmt.Sprintf("%d%%", pct))
+		right = lipgloss.NewStyle().Foreground(colSubtle).Render(fmt.Sprintf("%d%%", pct))
 	}
 
 	available := m.width - sessionPaneWidth - 1
@@ -168,7 +175,6 @@ func (m Model) renderOutputHeader() string {
 	if gap < 1 {
 		gap = 1
 	}
-	// Hard-truncate so wide emoji / miscounted ANSI never overflow the row.
 	result := left + strings.Repeat(" ", gap) + right
 	return ansi.Truncate(result, available, "")
 }
@@ -179,13 +185,10 @@ func (m Model) renderSessionList() string {
 	// Show filter input if in filter mode or filter is active.
 	// When filtering, fall back to a flat (ungrouped) list for simplicity.
 	if m.mode == ModeFilter || m.isFiltered() {
-		filterStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F59E0B")).
-			PaddingLeft(1)
 		if m.mode == ModeFilter {
-			sb.WriteString(filterStyle.Render("/" + m.filterInput.Value() + "▎") + "\n")
+			sb.WriteString(styleFilter.Render("/" + m.filterInput.Value() + "▎") + "\n")
 		} else {
-			sb.WriteString(filterStyle.Render("/" + m.filterQuery) + "\n")
+			sb.WriteString(styleFilter.Render("/" + m.filterQuery) + "\n")
 		}
 
 		sessions := m.filteredSessions()
@@ -241,7 +244,6 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 		}
 	}
 
-	// Only show pin on ungrouped sessions; grouped sessions show it on the header.
 	gKey, _ := m.groupKeyAndName(s)
 	pinIndicator := ""
 	if gKey == "" {
@@ -250,27 +252,23 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 		}
 	}
 
-	nameStyle := styleSessionItem
-	metaStyle := styleSessionMeta
-	if i == m.selected {
+	selected := i == m.selected
+	bg := stateBg(s.State.String())
+
+	var nameStyle, metaStyle lipgloss.Style
+	if selected {
 		nameStyle = styleSessionItemSelected
-		metaStyle = styleSessionMeta.
-			Background(colSelected).
-			Foreground(lipgloss.Color("#FDE68A"))
+		metaStyle = styleSessionMeta.Background(colGoldDim).Foreground(colGoldText)
 	} else if gKey != "" {
 		nameStyle = styleSessionItem.Background(colGroupedBg)
 		metaStyle = styleSessionMeta.Background(colGroupedBg)
+	} else {
+		nameStyle = styleSessionItem.Background(bg)
+		metaStyle = styleSessionMeta.Background(bg)
 	}
 
-	nameLine := nameStyle.
-		Width(sessionPaneWidth - 1).
-		Render(pinIndicator + icon + " " + name)
-
-	// Sub-line: tool name or idle duration
-	meta := sessionMeta(s)
-	metaLine := metaStyle.
-		Width(sessionPaneWidth - 1).
-		Render(meta)
+	nameLine := nameStyle.Width(sessionPaneWidth - 1).Render(pinIndicator + icon + " " + name)
+	metaLine := metaStyle.Width(sessionPaneWidth - 1).Render(sessionMeta(s))
 
 	return nameLine + "\n" + metaLine
 }
@@ -350,53 +348,27 @@ func (m Model) renderLandingPage() string {
 }
 
 func (m Model) renderRenameOverlay() string {
-	titleStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("#7C3AED")).
-		Foreground(lipgloss.Color("#FFFFFF")).
-		Bold(true).
-		Padding(0, 1)
-	inputStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#7C3AED")).
-		Padding(0, 1)
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280")).
-		PaddingLeft(1)
-
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Width(m.width).Render("Rename Session") + "\n\n")
-	sb.WriteString(inputStyle.Render(m.renameInput.View()) + "\n\n")
-	sb.WriteString(helpStyle.Render("[enter] save  [esc] cancel  (empty to clear name)"))
+	sb.WriteString(styleOverlayTitle.Width(m.width).Render("Rename Session") + "\n\n")
+	sb.WriteString(styleOverlayInput.Render(m.renameInput.View()) + "\n\n")
+	sb.WriteString(styleOverlayHelp.Render("[enter] save  [esc] cancel  (empty to clear name)"))
 	return sb.String()
 }
 
 func (m Model) renderGroupSetOverlay() string {
-	titleStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("#7C3AED")).
-		Foreground(lipgloss.Color("#FFFFFF")).
-		Bold(true).
-		Padding(0, 1)
-	inputStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#7C3AED")).
-		Padding(0, 1)
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280")).
-		PaddingLeft(1)
-
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Width(m.width).Render("Set Group") + "\n\n")
-	sb.WriteString(inputStyle.Render(m.groupSetInput.View()) + "\n\n")
-	sb.WriteString(helpStyle.Render("[enter] save  [esc] cancel  (empty to use auto-detected group)"))
+	sb.WriteString(styleOverlayTitle.Width(m.width).Render("Set Group") + "\n\n")
+	sb.WriteString(styleOverlayInput.Render(m.groupSetInput.View()) + "\n\n")
+	sb.WriteString(styleOverlayHelp.Render("[enter] save  [esc] cancel  (empty to use auto-detected group)"))
 	return sb.String()
 }
 
 func (m Model) renderHelp() string {
 	if m.insertMode {
-		return styleHelpInsert.Width(m.width).Render("INSERT  [ctrl+h] exit")
+		return styleHelpInsert.Width(m.width).Render("  INSERT  [ctrl+h] exit")
 	}
 	if m.mode == ModeFilter {
-		return styleHelpInsert.Width(m.width).Render("FILTER  [enter] apply  [esc] clear")
+		return styleHelpFilter.Width(m.width).Render("  FILTER  [enter] apply  [esc] clear")
 	}
 	parts := []string{
 		"[j/k] nav",
