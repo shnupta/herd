@@ -87,32 +87,39 @@ func (m Model) View() string {
 }
 
 func (m Model) renderHeader() string {
-	// All inner styles carry the purple header background so the full bar is
-	// solid — lipgloss won't fill the background of pre-rendered ANSI spans.
+	// Every span must carry Background(colAccent) explicitly — lipgloss cannot
+	// retroactively inject background into pre-rendered ANSI strings, so any
+	// unstyled bytes (spaces, concatenation joins) fall back to the terminal
+	// default (black). The gap fill is also an explicitly styled span.
 	hbg := colAccent
+	span := func(fg lipgloss.Color, bold bool, text string) string {
+		s := lipgloss.NewStyle().Background(hbg).Foreground(fg)
+		if bold {
+			s = s.Bold(true)
+		}
+		return s.Render(text)
+	}
+	fill := func(n int) string {
+		if n < 1 {
+			n = 1
+		}
+		return lipgloss.NewStyle().Background(hbg).Render(strings.Repeat(" ", n))
+	}
 
-	left := lipgloss.NewStyle().Bold(true).Background(hbg).Foreground(lipgloss.Color("#FFFFFF")).Render("herd")
+	left := span(lipgloss.Color("#FFFFFF"), true, " herd")
 	sel := m.selectedSession()
 	if sel != nil {
-		sep := lipgloss.NewStyle().Background(hbg).Foreground(lipgloss.Color("#C4B5FD")).Render("  ·  ")
-		proj := lipgloss.NewStyle().Background(hbg).Foreground(colGoldText).Render(filepath.Base(sel.ProjectPath))
-		left += sep + proj
+		left += span(lipgloss.Color("#C4B5FD"), false, "  ·  ")
+		left += span(colGoldText, false, filepath.Base(sel.ProjectPath))
 		if sel.GitBranch != "" {
-			branch := lipgloss.NewStyle().Background(hbg).Foreground(lipgloss.Color("#C4B5FD")).Render("  [" + sel.GitBranch + "]")
-			left += branch
+			left += span(lipgloss.Color("#C4B5FD"), false, "  ["+sel.GitBranch+"]")
 		}
 	}
 
-	// Right: coloured stat pills — each pill keeps its state colour on purple bg.
-	right := m.aggregateStats()
+	right := m.aggregateStats() + fill(1) // trailing padding
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
-
-	content := left + strings.Repeat(" ", gap) + right
-	return styleHeader.Width(m.width).Render(content)
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	return left + fill(gap) + right
 }
 
 // aggregateStats returns a coloured summary of session states.

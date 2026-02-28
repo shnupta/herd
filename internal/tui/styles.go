@@ -35,11 +35,12 @@ var (
 	colSelected  = colGoldDim
 
 	// ── Main header ──────────────────────────────────────────────────────────
+	// No padding — renderHeader manages all spacing as explicitly-styled spans
+	// so the purple background is unbroken across the full terminal width.
 	styleHeader = lipgloss.NewStyle().
 			Background(colAccent).
 			Foreground(lipgloss.Color("#FFFFFF")).
-			Bold(true).
-			Padding(0, 1)
+			Bold(true)
 
 	// ── Session pane ─────────────────────────────────────────────────────────
 	styleSessionPane = lipgloss.NewStyle().
