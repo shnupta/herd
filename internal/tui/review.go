@@ -88,42 +88,50 @@ var reviewKeys = ReviewKeyMap{
 // Styles for the review UI
 var (
 	reviewHeaderStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#7C3AED")).
+				Background(colAccent).
 				Foreground(lipgloss.Color("#FFFFFF")).
 				Bold(true).
 				Padding(0, 1)
 
 	reviewFileStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#3B82F6")).
+			Foreground(colBlue).
 			Bold(true)
 
 	reviewHunkStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6B7280"))
+			Foreground(colSubtle).
+			Background(lipgloss.Color("#161B22"))
 
 	reviewAddedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#10B981"))
+				Foreground(colGreen).
+				Background(lipgloss.Color("#0D1F12"))
 
 	reviewRemovedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#EF4444"))
+				Foreground(colRed).
+				Background(lipgloss.Color("#1F0D0D"))
 
 	reviewContextStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#9CA3AF"))
+				Foreground(colSubtext)
 
 	reviewSelectedStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#374151"))
+				Background(lipgloss.Color("#21262D")).
+				Foreground(colText)
 
 	reviewCommentStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#F59E0B")).
+				Foreground(colAmber).
+				Background(colAmberDim).
 				Italic(true)
 
+	reviewLineNumStyle = lipgloss.NewStyle().
+				Foreground(colSubtle)
+
 	reviewHelpStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("#1F2937")).
-			Foreground(lipgloss.Color("#6B7280")).
+			Background(colSurface).
+			Foreground(colSubtext).
 			Padding(0, 1)
 
 	reviewCommentInputStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("#F59E0B")).
+				BorderForeground(colAmber).
 				Padding(0, 1)
 )
 
@@ -497,7 +505,7 @@ func (m *ReviewModel) updateViewportContent() {
 			}
 
 			content := style.Render(prefix + fl.line.Content)
-			line := reviewContextStyle.Render(lineNum) + content
+			line := reviewLineNumStyle.Render(lineNum) + content
 
 			if isSelected {
 				line = reviewSelectedStyle.Width(m.width).Render(line)
