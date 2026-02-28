@@ -87,19 +87,23 @@ func (m Model) View() string {
 }
 
 func (m Model) renderHeader() string {
-	// Left: "herd  ·  project [branch]"
-	left := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render("herd")
+	// All inner styles carry the purple header background so the full bar is
+	// solid — lipgloss won't fill the background of pre-rendered ANSI spans.
+	hbg := colAccent
+
+	left := lipgloss.NewStyle().Bold(true).Background(hbg).Foreground(lipgloss.Color("#FFFFFF")).Render("herd")
 	sel := m.selectedSession()
 	if sel != nil {
-		proj := lipgloss.NewStyle().Foreground(colGoldText).Render(filepath.Base(sel.ProjectPath))
-		left += lipgloss.NewStyle().Foreground(lipgloss.Color("#C4B5FD")).Render("  ·  ") + proj
+		sep := lipgloss.NewStyle().Background(hbg).Foreground(lipgloss.Color("#C4B5FD")).Render("  ·  ")
+		proj := lipgloss.NewStyle().Background(hbg).Foreground(colGoldText).Render(filepath.Base(sel.ProjectPath))
+		left += sep + proj
 		if sel.GitBranch != "" {
-			branch := lipgloss.NewStyle().Foreground(lipgloss.Color("#C4B5FD")).Render("[" + sel.GitBranch + "]")
-			left += "  " + branch
+			branch := lipgloss.NewStyle().Background(hbg).Foreground(lipgloss.Color("#C4B5FD")).Render("  [" + sel.GitBranch + "]")
+			left += branch
 		}
 	}
 
-	// Right: coloured stat pills
+	// Right: coloured stat pills — each pill keeps its state colour on purple bg.
 	right := m.aggregateStats()
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
@@ -124,6 +128,7 @@ func (m Model) aggregateStats() string {
 
 	pill := func(color lipgloss.Color, text string) string {
 		return lipgloss.NewStyle().
+			Background(colAccent).
 			Foreground(color).
 			Bold(true).
 			Render(text)
@@ -146,9 +151,9 @@ func (m Model) aggregateStats() string {
 		parts = append(parts, pill(colCyan, fmt.Sprintf("○ %d idle", n)))
 	}
 	if len(parts) == 0 {
-		return lipgloss.NewStyle().Foreground(colSubtext).Render(fmt.Sprintf("%d sessions", len(m.sessions)))
+		return lipgloss.NewStyle().Background(colAccent).Foreground(colSubtext).Render(fmt.Sprintf("%d sessions", len(m.sessions)))
 	}
-	sep := lipgloss.NewStyle().Foreground(colSubtle).Render("  ·  ")
+	sep := lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#C4B5FD")).Render("  ·  ")
 	return strings.Join(parts, sep)
 }
 
