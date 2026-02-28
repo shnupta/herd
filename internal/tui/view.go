@@ -182,8 +182,7 @@ func (m Model) renderOutputHeader() string {
 func (m Model) renderSessionList() string {
 	var sb strings.Builder
 
-	// Show filter input if in filter mode or filter is active.
-	// When filtering, fall back to a flat (ungrouped) list for simplicity.
+	// Filter mode: flat list with no tree decoration.
 	if m.mode == ModeFilter || m.isFiltered() {
 		if m.mode == ModeFilter {
 			sb.WriteString(styleFilter.Render("/" + m.filterInput.Value() + "▎") + "\n")
@@ -205,31 +204,43 @@ func (m Model) renderSessionList() string {
 			}
 		}
 		for i, s := range sessions {
-			actualIdx := indices[i]
-			sb.WriteString(m.renderSessionItem(actualIdx, s) + "\n")
+			sb.WriteString(m.renderSessionItem(indices[i], s, "", false, false) + "\n")
 		}
 		return strings.TrimSuffix(sb.String(), "\n")
 	}
 
-	// Grouped view.
+	// Tree view.
 	items := m.viewItems()
 	if len(items) == 0 {
 		sb.WriteString(styleSessionMeta.Render("no claude sessions\nfound in tmux"))
 		return sb.String()
 	}
 
-	for _, item := range items {
+	// Pre-compute which group each non-header item is in and whether it's the
+	// last child, so we can pick the right connector.
+	// lastInGroup[groupKey] = index of last child item in items slice.
+	lastInGroup := make(map[string]int)
+	for idx, item := range items {
+		if !item.isHeader && item.groupKey != "" {
+			lastInGroup[item.groupKey] = idx
+		}
+	}
+
+	for idx, item := range items {
 		if item.isHeader {
 			isSelected := m.cursorOnGroup == item.groupKey
 			sb.WriteString(m.renderGroupHeader(item, isSelected) + "\n")
 		} else {
-			sb.WriteString(m.renderSessionItem(item.sessionIdx, m.sessions[item.sessionIdx]) + "\n")
+			s := m.sessions[item.sessionIdx]
+			inGroup := item.groupKey != ""
+			isLast := inGroup && lastInGroup[item.groupKey] == idx
+			sb.WriteString(m.renderSessionItem(item.sessionIdx, s, item.groupKey, inGroup, isLast) + "\n")
 		}
 	}
 	return strings.TrimSuffix(sb.String(), "\n")
 }
 
-func (m Model) renderSessionItem(i int, s session.Session) string {
+func (m Model) renderSessionItem(i int, s session.Session, groupKey string, inGroup, isLastChild bool) string {
 	icon := stateIcon(s.State.String())
 	name := names.Get(s.Key())
 	if name == "" {
@@ -244,52 +255,87 @@ func (m Model) renderSessionItem(i int, s session.Session) string {
 		}
 	}
 
-	gKey, _ := m.groupKeyAndName(s)
+	selected := i == m.selected
+
+	// Tree connectors (only for grouped sessions).
+	// Each connector + space = 2 chars, keeping content width = sessionPaneWidth-3.
+	var connector, metaPrefix string
+	if inGroup {
+		connStyle := lipgloss.NewStyle().Foreground(colSubtle)
+		if isLastChild {
+			connector = connStyle.Render("└─") + " "
+			metaPrefix = "   " // blank continuation column
+		} else {
+			connector = connStyle.Render("├─") + " "
+			metaPrefix = connStyle.Render("│") + "  "
+		}
+	}
+
+	// Pin indicator only for ungrouped sessions (groups show it on header).
 	pinIndicator := ""
-	if gKey == "" {
+	if groupKey == "" {
 		if _, isPinned := m.pinned[s.Key()]; isPinned {
 			pinIndicator = "📌 "
 		}
 	}
 
-	selected := i == m.selected
-	bg := stateBg(s.State.String())
+	innerW := sessionPaneWidth - 1 - lipgloss.Width(connector)
+	if innerW < 4 {
+		innerW = 4
+	}
 
 	var nameStyle, metaStyle lipgloss.Style
 	if selected {
-		nameStyle = styleSessionItemSelected
-		metaStyle = styleSessionMeta.Background(colGoldDim).Foreground(colGoldText)
-	} else if gKey != "" {
-		nameStyle = styleSessionItem.Background(colGroupedBg)
-		metaStyle = styleSessionMeta.Background(colGroupedBg)
+		nameStyle = styleSessionItemSelected.Width(innerW)
+		metaStyle = styleSessionMeta.Background(colGoldDim).Foreground(colGoldText).Width(innerW)
 	} else {
-		nameStyle = styleSessionItem.Background(bg)
-		metaStyle = styleSessionMeta.Background(bg)
+		bg := stateBg(s.State.String())
+		if inGroup {
+			bg = colGroupedBg
+		}
+		nameStyle = styleSessionItem.Background(bg).Width(innerW)
+		metaStyle = styleSessionMeta.Background(bg).Width(innerW)
 	}
 
-	nameLine := nameStyle.Width(sessionPaneWidth - 1).Render(pinIndicator + icon + " " + name)
-	metaLine := metaStyle.Width(sessionPaneWidth - 1).Render(sessionMeta(s))
+	nameLine := connector + nameStyle.Render(pinIndicator+icon+" "+name)
+	metaLine := metaPrefix + metaStyle.Render(sessionMeta(s))
 
 	return nameLine + "\n" + metaLine
 }
 
 func (m Model) renderGroupHeader(item viewItem, selected bool) string {
-	arrow := "▼"
-	if m.collapsedGroups[item.groupKey] {
-		arrow = "▶"
+	collapsed := m.collapsedGroups[item.groupKey]
+	connStyle := lipgloss.NewStyle().Foreground(colSubtle)
+
+	var arrow string
+	if collapsed {
+		arrow = connStyle.Render("▶") + " "
+	} else {
+		arrow = connStyle.Render("▼") + " "
 	}
+
 	dot := stateIcon(item.aggState.String())
 	pinIndicator := ""
 	if m.isGroupPinned(item.groupKey) {
 		pinIndicator = "📌 "
 	}
-	label := fmt.Sprintf("%s%s %s (%d)  %s", pinIndicator, arrow, item.groupName, item.count, dot)
 
-	style := styleGroupHeader
-	if selected {
-		style = styleGroupHeaderSelected
+	countStr := lipgloss.NewStyle().Foreground(colSubtle).Render(fmt.Sprintf("(%d)", item.count))
+	label := pinIndicator + item.groupName + " " + countStr + "  " + dot
+
+	innerW := sessionPaneWidth - 1 - lipgloss.Width(arrow)
+	if innerW < 4 {
+		innerW = 4
 	}
-	return style.Width(sessionPaneWidth - 1).Render(label)
+
+	var style lipgloss.Style
+	if selected {
+		style = styleGroupHeaderSelected.Width(innerW)
+	} else {
+		style = styleGroupHeader.Width(innerW)
+	}
+
+	return arrow + style.Render(label)
 }
 
 func sessionMeta(s session.Session) string {
